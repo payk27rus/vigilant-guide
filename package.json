@@ -1,0 +1,49 @@
+{
+  "name": "mlvlg-viewer",
+  "version": "1.0.0",
+  "description": "MLVLG Log Viewer",
+  "main": "main.js",
+  "author": "MLVLG",
+  "license": "MIT",
+  "scripts": {
+    "start": "electron .",
+    "build": "electron-builder --win portable nsis",
+    "build:portable": "electron-builder --win portable",
+    "build:installer": "electron-builder --win nsis"
+  },
+  "devDependencies": {
+    "electron": "^28.3.0",
+    "electron-builder": "^24.13.3"
+  },
+  "build": {
+    "appId": "com.mlvlg.viewer",
+    "productName": "MLVLG Viewer",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "renderer/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": [
+        { "target": "portable", "arch": ["x64"] },
+        { "target": "nsis", "arch": ["x64"] }
+      ],
+      "artifactName": "MLVLG-Viewer-${version}-${arch}.${ext}"
+    },
+    "portable": {
+      "artifactName": "MLVLG-Viewer-Portable-${version}.exe"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "artifactName": "MLVLG-Viewer-Setup-${version}.exe"
+    }
+  }
+}
