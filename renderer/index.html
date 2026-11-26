@@ -1,1 +1,1753 @@
+﻿<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MLVLG // Просмотр логов</title>
+<style>
+  :root{
+    --void:#0a0c10; --panel:#12161d; --panel2:#161b23;
+    --border:#232a35; --border-soft:#1a2029; --grid:#1b212b;
+    --text:#e8ecf1; --text-dim:#6b7684; --text-dimmer:#454e5c;
+    --amber:#ffb020; --amber-dim:#7a5a1e;
+    --mono:ui-monospace,"SF Mono","Cascadia Mono","Roboto Mono",Consolas,monospace;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;height:100%;background:var(--void);color:var(--text);font-family:var(--mono);-webkit-font-smoothing:antialiased;}
+  body{display:flex;flex-direction:column;height:100vh;overflow:hidden;}
+  header{flex:0 0 auto;border-bottom:1px solid var(--border);background:linear-gradient(180deg,var(--panel2),var(--panel));padding:10px 18px 12px;}
+  .title-row{display:flex;align-items:baseline;justify-content:space-between;margin-bottom:10px;}
+  .title-row h1{font-size:13px;letter-spacing:.14em;font-weight:600;margin:0;text-transform:uppercase;}
+  .title-row h1 span{color:var(--amber);}
+  .title-meta{font-size:10.5px;color:var(--text-dim);letter-spacing:.04em;}
+  .max-stat{display:flex;flex-direction:column;align-items:flex-end;gap:1px;}
+  .max-stat .max-label{font-size:8.5px;letter-spacing:.14em;color:var(--text-dimmer);text-transform:uppercase;}
+  .max-stat .max-val{font-size:15px;font-weight:600;font-variant-numeric:tabular-nums;letter-spacing:.01em;line-height:1;}
+  .max-stat .max-val small{font-size:10px;color:var(--text-dim);font-weight:400;margin-left:2px;}
+  .scrub-row{display:flex;align-items:center;gap:8px;}
+  .play-btn{flex:0 0 auto;width:30px;height:30px;border-radius:3px;border:1px solid var(--border);background:var(--panel2);color:var(--amber);cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:11px;transition:border-color .15s,background .15s,box-shadow .15s;}
+  .play-btn:hover{border-color:var(--amber-dim);background:#1c1508;}
+  .play-btn.on{background:#2a1f0a;border-color:var(--amber);box-shadow:0 0 8px rgba(255,176,32,.5);}
+  .play-btn.accent{background:#1c1508;border-color:var(--amber-dim);width:auto;padding:0 10px;gap:6px;font-size:10.5px;letter-spacing:.04em;}
+  .play-btn.accent:hover{background:#2a1f0a;}
+  .time-readout{flex:0 0 auto;font-size:12px;color:var(--amber);min-width:150px;letter-spacing:.03em;font-variant-numeric:tabular-nums;}
+  .time-readout .total{color:var(--text-dim);}
+  input[type=range]{flex:1 1 auto;-webkit-appearance:none;appearance:none;height:26px;background:transparent;cursor:pointer;margin:0;}
+  input[type=range]::-webkit-slider-runnable-track{height:4px;background:linear-gradient(90deg,var(--amber) 0%,var(--amber) var(--scrub-pct,0%),var(--border) var(--scrub-pct,0%),var(--border) 100%);border-radius:2px;}
+  input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:14px;height:14px;margin-top:-5px;border-radius:2px;background:var(--amber);border:1px solid #3a2a08;box-shadow:0 0 8px rgba(255,176,32,.6);cursor:grab;}
+  input[type=range]::-moz-range-track{height:4px;background:linear-gradient(90deg,var(--amber) 0%,var(--amber) var(--scrub-pct,0%),var(--border) var(--scrub-pct,0%),var(--border) 100%);border-radius:2px;}
+  input[type=range]::-moz-range-thumb{width:14px;height:14px;border-radius:2px;background:var(--amber);border:1px solid #3a2a08;box-shadow:0 0 8px rgba(255,176,32,.6);cursor:grab;}
+  .speed-select{flex:0 0 auto;background:var(--panel2);border:1px solid var(--border);color:var(--amber);font-family:var(--mono);font-size:10.5px;padding:5px 6px;border-radius:3px;cursor:pointer;min-width:88px;}
+  .speed-select:hover{border-color:var(--amber-dim);}
+  .cfg-indicator{flex:0 0 auto;background:var(--panel2);border:1px solid var(--border);color:var(--text-dim);font-family:var(--mono);font-size:10.5px;padding:5px 8px;border-radius:3px;cursor:pointer;white-space:nowrap;max-width:130px;overflow:hidden;text-overflow:ellipsis;transition:border-color .15s,color .15s;}
+  .cfg-indicator:hover{border-color:var(--amber-dim);color:var(--amber);}
+  .cfg-indicator.set{color:var(--amber);border-color:var(--amber-dim);}
 
+  .em-overlay{position:fixed;inset:0;background:rgba(5,6,9,.6);z-index:10000;opacity:0;pointer-events:none;transition:opacity .22s;}
+  .em-overlay.open{opacity:1;pointer-events:auto;}
+  .em-modal{position:fixed;top:0;right:0;bottom:0;width:min(460px,92vw);background:linear-gradient(180deg,var(--panel2),var(--panel));border-left:1px solid var(--border);box-shadow:-20px 0 60px rgba(0,0,0,.7);z-index:10001;display:flex;flex-direction:column;overflow:hidden;transform:translateX(102%);visibility:hidden;pointer-events:none;transition:transform .28s cubic-bezier(.4,0,.2,1),visibility 0s linear .28s;}
+  .em-modal.open{transform:translateX(0);visibility:visible;pointer-events:auto;transition:transform .28s cubic-bezier(.4,0,.2,1),visibility 0s;}
+  .em-hdr{flex:0 0 auto;display:flex;align-items:center;justify-content:space-between;padding:12px 16px;border-bottom:1px solid var(--border);background:var(--panel2);}
+  .em-title{font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:var(--text);display:flex;align-items:center;gap:8px;}
+  .em-title .dot{width:7px;height:7px;border-radius:50%;background:var(--amber);box-shadow:0 0 6px rgba(255,176,32,.7);}
+  .em-btns{display:flex;gap:6px;}
+  .em-icon-btn{width:26px;height:26px;border-radius:3px;border:1px solid var(--border);background:transparent;color:var(--text-dim);cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:12px;}
+  .em-icon-btn:hover{border-color:var(--amber-dim);color:var(--amber);}
+  .em-body{flex:1 1 auto;overflow-y:auto;padding:14px 16px;display:flex;flex-direction:column;gap:16px;}
+  .em-section{border:1px solid var(--border-soft);border-radius:5px;padding:12px 14px;background:rgba(255,255,255,.01);}
+  .em-section-title{font-size:10px;letter-spacing:.14em;color:var(--amber);text-transform:uppercase;margin-bottom:10px;display:flex;align-items:center;gap:6px;}
+  .em-section-title::before{content:'';width:3px;height:12px;background:var(--amber);border-radius:1px;}
+  .em-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:8px 12px;}
+  .em-grid .em-full{grid-column:1/-1;}
+  .em-grid label{display:flex;flex-direction:column;gap:3px;font-size:9.5px;color:var(--text-dim);letter-spacing:.04em;text-transform:uppercase;min-width:0;}
+  .em-grid label input,.em-grid label select,.em-grid label textarea{background:var(--void);border:1px solid var(--border);color:var(--text);font-family:var(--mono);font-size:11px;padding:6px 8px;border-radius:3px;width:100%;min-width:0;}
+  .em-grid label input:focus,.em-grid label select:focus,.em-grid label textarea:focus{outline:none;border-color:var(--amber-dim);}
+  .em-grid label textarea{resize:vertical;min-height:50px;}
+  .em-grid label .em-row{display:flex;gap:6px;align-items:center;}
+  .em-grid label .em-row input{flex:1;}
+  .em-grid label .em-row .unit{font-size:9.5px;color:var(--text-dimmer);flex:0 0 auto;}
+  .em-footer{flex:0 0 auto;padding:12px 16px;border-top:1px solid var(--border);background:var(--panel2);display:flex;align-items:center;gap:10px;}
+  .em-footer .em-hint{flex:1 1 auto;font-size:9.5px;color:var(--text-dimmer);line-height:1.4;}
+  .em-footer button{padding:7px 14px;font-family:var(--mono);font-size:11px;border-radius:3px;cursor:pointer;letter-spacing:.04em;}
+  .em-footer .em-save{background:var(--amber);border:1px solid var(--amber);color:var(--void);font-weight:600;}
+  .em-footer .em-save:hover{background:#ffc040;}
+
+  .layout{flex:1 1 auto;display:grid;grid-template-columns:220px 1fr 280px;min-height:0;}
+  .params{border-right:1px solid var(--border);background:var(--panel);display:flex;flex-direction:column;min-height:0;}
+  .params-search{flex:0 0 auto;padding:10px;border-bottom:1px solid var(--border-soft);}
+  .params-search input{width:100%;background:var(--void);border:1px solid var(--border);color:var(--text);font-family:var(--mono);font-size:11px;padding:6px 8px;border-radius:3px;outline:none;}
+  .params-search input:focus{border-color:var(--amber-dim);}
+  .params-list{flex:1 1 auto;overflow-y:auto;padding:4px 0 12px;}
+  .cat-label{font-size:9.5px;letter-spacing:.12em;color:var(--text-dimmer);padding:12px 12px 4px;text-transform:uppercase;}
+  .param-row{display:flex;align-items:center;gap:8px;padding:5px 12px;cursor:pointer;user-select:none;border-left:2px solid transparent;}
+  .param-row:hover{background:rgba(255,255,255,.03);}
+  .param-row.active{background:rgba(255,255,255,.045);}
+  .swatch{width:9px;height:9px;border-radius:2px;flex:0 0 auto;border:1.5px solid var(--text-dimmer);background:transparent;}
+  .param-row.active .swatch{border-color:transparent;}
+  .param-name{font-size:11px;color:var(--text-dim);flex:1 1 auto;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .param-row.active .param-name{color:var(--text);}
+  .param-unit{font-size:9.5px;color:var(--text-dimmer);flex:0 0 auto;}
+  .graph-wrap{position:relative;min-height:0;min-width:0;overflow:hidden;display:flex;flex-direction:column;background:var(--void);}
+  .graph-canvas-holder{position:relative;flex:1 1 auto;min-height:0;min-width:0;overflow:hidden;}
+  canvas{position:absolute;inset:0;display:block;width:100%;height:100%;image-rendering:crisp-edges;}
+  .zoom-controls{position:absolute;top:10px;right:10px;display:flex;flex-direction:column;gap:4px;z-index:3;opacity:.7;transition:opacity .15s;}
+  .zoom-controls:hover{opacity:1;}
+  .zoom-btn{width:28px;height:28px;background:rgba(10,12,16,.85);border:1px solid var(--border);color:var(--text-dim);font-family:var(--mono);font-size:14px;font-weight:600;line-height:1;cursor:pointer;border-radius:3px;display:flex;align-items:center;justify-content:center;padding:0;user-select:none;}
+  .zoom-btn:hover{background:rgba(255,181,71,.15);color:var(--amber);border-color:var(--amber-dim);}
+  .zoom-btn.reset{font-size:11px;}
+  .tooltip{position:absolute;pointer-events:none;background:rgba(10,12,16,.94);border:1px solid var(--border);border-left:2px solid var(--amber);padding:7px 10px;font-size:10.5px;line-height:1.6;border-radius:3px;box-shadow:0 4px 18px rgba(0,0,0,.5);white-space:nowrap;opacity:0;transition:opacity .08s;z-index:5;}
+  .tooltip.show{opacity:1;}
+  .tooltip .t-time{color:var(--amber);margin-bottom:3px;}
+  .tooltip .t-row{display:flex;gap:8px;align-items:center;}
+  .tooltip .t-dot{width:7px;height:7px;border-radius:1px;flex:0 0 auto;}
+  .tooltip .t-name{color:var(--text-dim);}
+  .tooltip .t-val{color:var(--text);margin-left:auto;padding-left:10px;}
+  .empty-state{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:6px;color:var(--text-dimmer);font-size:11.5px;text-align:center;pointer-events:auto;background:var(--void);z-index:2;}
+  .empty-state b{color:var(--text-dim);font-weight:500;}
+  .empty-state button{margin-top:12px;padding:8px 16px;background:var(--amber);color:var(--void);border:none;border-radius:3px;font-family:var(--mono);font-size:11px;cursor:pointer;font-weight:600;letter-spacing:.04em;}
+  .zoom-hint{position:absolute;bottom:8px;left:8px;font-size:9px;color:var(--text-dimmer);background:rgba(10,12,16,.7);border:1px solid var(--border);padding:4px 8px;border-radius:2px;pointer-events:none;opacity:0;transition:opacity .2s;}
+  .zoom-hint.show{opacity:1;}
+
+  .readouts{border-left:1px solid var(--border);background:var(--panel);display:flex;flex-direction:column;min-height:0;}
+  .ro-tabs{flex:0 0 auto;display:flex;border-bottom:1px solid var(--border);background:var(--panel2);}
+  .ro-tab{flex:1;background:transparent;border:none;color:var(--text-dim);font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;padding:9px 4px;cursor:pointer;border-bottom:2px solid transparent;transition:color .15s,border-color .15s;}
+  .ro-tab:hover{color:var(--text);}
+  .ro-tab.active{color:var(--amber);border-bottom-color:var(--amber);}
+  .ro-pane{display:none;flex:1 1 auto;overflow-y:auto;min-height:0;flex-direction:column;}
+  .ro-pane.active{display:flex;}
+  .readout-hdr{font-size:9.5px;letter-spacing:.12em;color:var(--text-dimmer);padding:10px 12px 8px;text-transform:uppercase;border-bottom:1px solid var(--border-soft);margin-bottom:6px;}
+  .readout-card{padding:8px 12px 10px;border-left:2px solid transparent;}
+  .readout-card .rc-top{display:flex;align-items:center;gap:6px;font-size:9.5px;color:var(--text-dim);letter-spacing:.03em;margin-bottom:2px;}
+  .readout-card .rc-dot{width:6px;height:6px;border-radius:1px;flex:0 0 auto;}
+  .readout-card .rc-val{font-size:20px;font-weight:600;font-variant-numeric:tabular-nums;letter-spacing:.01em;}
+  .readout-card .rc-unit{font-size:10px;color:var(--text-dimmer);margin-left:4px;}
+  .readouts-empty{padding:16px 14px;font-size:10.5px;color:var(--text-dimmer);line-height:1.6;}
+  .param-filters{flex:0 0 auto;border-top:1px solid var(--border);background:var(--panel2);display:flex;flex-direction:column;}
+  .pf-hdr{font-size:9.5px;letter-spacing:.12em;color:var(--text-dimmer);padding:8px 12px 7px;text-transform:uppercase;border-bottom:1px solid var(--border-soft);flex:0 0 auto;cursor:pointer;user-select:none;display:flex;align-items:center;gap:6px;transition:color .15s;}
+  .pf-hdr:hover{color:var(--amber);}
+  .pf-hdr .pf-caret{font-size:9px;color:var(--text-dimmer);transition:transform .2s;display:inline-block;}
+  .param-filters.open .pf-hdr .pf-caret{transform:rotate(90deg);}
+  .param-filters .pf-hdr .pf-count{margin-left:auto;font-size:9px;color:var(--text-dimmer);letter-spacing:0;}
+  .pf-body{display:none;overflow:hidden;}
+  .param-filters.open .pf-body{display:block;}
+  .pf-list{padding:4px 0;max-height:220px;overflow-y:auto;}
+  .pf-empty{padding:10px 12px;font-size:10px;color:var(--text-dimmer);line-height:1.5;}
+  .pf-row{padding:5px 12px;display:flex;align-items:center;justify-content:space-between;gap:6px;border-bottom:1px solid var(--border-soft);}
+  .pf-check{display:flex;align-items:center;gap:5px;font-size:10.5px;color:var(--text-dim);cursor:pointer;flex:0 1 auto;min-width:0;}
+  .pf-check input{cursor:pointer;flex:0 0 auto;}
+  .pf-dot{width:6px;height:6px;border-radius:1px;flex:0 0 auto;}
+  .pf-name{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .pf-range{display:flex;align-items:center;gap:3px;flex:0 0 auto;}
+  .pf-range input{width:44px;background:var(--void);border:1px solid var(--border);color:var(--text);font-family:var(--mono);font-size:10px;padding:3px 4px;border-radius:3px;text-align:right;}
+  .pf-range input:focus{outline:none;border-color:var(--amber-dim);}
+  .pf-sep{color:var(--text-dimmer);font-size:10px;}
+
+  .tp-section{padding:10px 12px 12px;display:flex;flex-direction:column;gap:8px;}
+  .tp-config{display:grid;grid-template-columns:1fr 1fr;gap:6px 8px;}
+  .tp-config label{display:flex;align-items:center;gap:4px;font-size:9px;color:var(--text-dim);text-transform:uppercase;letter-spacing:.04em;min-width:0;}
+  .tp-config label span.lbl{flex:0 0 auto;}
+  .tp-config select,.tp-config input{flex:1 1 auto;min-width:0;background:var(--void);border:1px solid var(--border);color:var(--text);font-family:var(--mono);font-size:10px;padding:3px 4px;border-radius:2px;}
+  .tp-config select{cursor:pointer;}
+  .tp-config input[type=number]{width:100%;}
+  .tp-config .tp-full{grid-column:1/-1;}
+  .tp-grid-wrap{display:flex;justify-content:center;padding:2px 0;}
+  .tp-grid{display:grid;gap:1px;background:var(--border);border:1px solid var(--border);padding:1px;width:100%;max-width:236px;font-size:9px;}
+  .tp-cell{position:relative;background:#0e1218;aspect-ratio:1;min-width:0;display:flex;align-items:center;justify-content:center;overflow:hidden;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.9);cursor:pointer;transition:box-shadow .1s;border-radius:1px;line-height:1;}
+  .tp-cell .cell-val{font-weight:600;font-size:inherit;pointer-events:none;padding:1px;font-variant-numeric:tabular-nums;}
+  .tp-cell .cell-count{position:absolute;top:1px;right:2px;font-size:6px;color:rgba(255,255,255,.55);pointer-events:none;font-variant-numeric:tabular-nums;}
+  .tp-cell.on{box-shadow:0 0 0 2px var(--amber),0 0 8px rgba(255,176,32,.85);z-index:2;}
+  .tp-cell:hover{filter:brightness(1.25);}
+  .tp-readout{font-size:9.5px;color:var(--text-dim);line-height:1.7;padding:4px 0 0;font-variant-numeric:tabular-nums;}
+  .tp-readout b{color:var(--amber);font-weight:600;}
+  .tp-readout .tp-empty{color:var(--text-dimmer);}
+  .tp-legend{font-size:9px;color:var(--text-dimmer);padding:0 0 2px;display:flex;align-items:center;gap:6px;justify-content:space-between;}
+  .tp-legend-bar{flex:1 1 auto;height:6px;border-radius:2px;background:linear-gradient(90deg,hsl(220,55%,25%),hsl(180,55%,28%),hsl(140,55%,30%),hsl(80,55%,32%),hsl(40,55%,35%),hsl(0,55%,38%));border:1px solid var(--border);}
+
+  #toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#1c1508;border:1px solid var(--amber-dim);color:var(--amber);padding:10px 20px;border-radius:4px;font-size:12px;font-family:var(--mono);z-index:10004;opacity:0;transition:opacity .3s;pointer-events:none;max-width:90vw;text-align:center;box-shadow:0 6px 24px rgba(0,0,0,.5);}
+  #toast.show{opacity:1;}
+
+  ::-webkit-scrollbar{width:8px;height:8px;}
+  ::-webkit-scrollbar-track{background:transparent;}
+  ::-webkit-scrollbar-thumb{background:var(--border);border-radius:4px;}
+  ::-webkit-scrollbar-thumb:hover{background:#2c3542;}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="title-row">
+    <h1>MLVLG <span>//</span> ПРОСМОТР ЛОГОВ</h1>
+    <div style="display:flex;gap:24px;align-items:center;">
+      <div class="max-stat" id="maxHP"><span class="max-label">ПИК HP</span><span class="max-val" style="color:#ff6b6b;">—</span></div>
+      <div class="max-stat" id="maxAir"><span class="max-label">ПИК ВОЗДУХА</span><span class="max-val" style="color:#4ec9ff;">—</span></div>
+      <div class="title-meta" id="metaInfo">—</div>
+    </div>
+  </div>
+  <div class="scrub-row">
+    <button class="play-btn" id="loadBtn" title="Загрузить MLG или CSV">📁</button>
+    <input type="file" id="fileInput" accept=".mlg,.csv,.json" style="display:none;">
+    <button class="play-btn" id="prevBtn" title="Шаг назад (←)">⏮</button>
+    <button class="play-btn" id="playBtn" title="Воспроизведение / пауза (пробел)">▶</button>
+    <button class="play-btn" id="nextBtn" title="Шаг вперёд (→)">⏭</button>
+    <button class="play-btn" id="loopBtn" title="Цикличное воспроизведение (L)">🔁</button>
+    <div class="time-readout"><span id="curTime">0.0000s</span> <span class="total">/ <span id="totalTime">0.0000s</span></span></div>
+    <input type="range" id="scrubber" min="0" max="0" step="0.001" value="0">
+    <select class="speed-select" id="speedSelect" title="Скорость воспроизведения ([ и ])">
+      <option value="0.00001">0.00001×</option>
+      <option value="0.000025">0.000025×</option>
+      <option value="0.00005">0.00005×</option>
+      <option value="0.0001">0.0001×</option>
+      <option value="0.00025">0.00025×</option>
+      <option value="0.0005">0.0005×</option>
+      <option value="0.001">0.001×</option>
+      <option value="0.0025">0.0025×</option>
+      <option value="0.005">0.005×</option>
+      <option value="0.025">0.025×</option>
+      <option value="0.05">0.05×</option>
+      <option value="0.125">0.125×</option>
+      <option value="0.25">0.25×</option>
+      <option value="0.5">0.5×</option>
+      <option value="1">1×</option>
+      <option value="2">2×</option>
+      <option value="5" selected>5×</option>
+      <option value="12.5">12.5×</option>
+      <option value="30">30×</option>
+      <option value="60">60×</option>
+    </select>
+    <div class="speed-select" id="zoomIndicator" style="cursor:default;min-width:64px;text-align:center;">1.0×</div>
+    <div class="cfg-indicator" id="configIndicator" title="Открыть конфигурацию двигателя">⚙ Конфиг</div>
+    <button class="play-btn accent" id="deepseekLinkBtn" title="Открыть DeepSeek для анализа">🔬 DeepSeek</button>
+  </div>
+</header>
+
+<div class="em-overlay" id="engineOverlay"></div>
+<div class="em-modal" id="engineModal">
+  <div class="em-hdr">
+    <div class="em-title"><span class="dot"></span>Конфигурация двигателя</div>
+    <div class="em-btns">
+      <button class="em-icon-btn" id="emResetBtn" title="Сбросить">↺</button>
+      <button class="em-icon-btn" id="emCloseBtn" title="Закрыть (Esc)">✕</button>
+    </div>
+  </div>
+  <div class="em-body" id="emBody"></div>
+  <div class="em-footer">
+    <div class="em-hint">Все поля сохраняются в браузере. Esc — закрыть.</div>
+    <button class="em-save" id="emSaveBtn">Сохранить</button>
+  </div>
+</div>
+
+<div class="layout">
+  <div class="params">
+    <div class="params-search"><input type="text" id="searchBox" placeholder="поиск параметров…"></div>
+    <div class="params-list" id="paramsList"></div>
+  </div>
+
+  <div class="graph-wrap">
+    <div class="graph-canvas-holder" id="canvasHolder">
+      <canvas id="chart"></canvas>
+      <div class="zoom-controls">
+        <button class="zoom-btn" id="zoomInBtn" title="Приблизить">+</button>
+        <button class="zoom-btn" id="zoomOutBtn" title="Отдалить">−</button>
+        <button class="zoom-btn reset" id="zoomResetBtn" title="Сбросить зум">1×</button>
+      </div>
+      <div class="tooltip" id="tooltip"></div>
+      <div class="zoom-hint" id="zoomHint">← → перемотка · , . покадрово · Home/End · L — цикл · [ ] — скорость</div>
+      <div class="empty-state" id="emptyState">
+        <div id="emptyStateContent">
+          <b>Данные не загружены</b>
+          <div style="margin-top:4px;">Перетащите .mlg / .csv / .json или нажмите ниже</div>
+          <button id="emptyLoadBtn">Открыть файл</button>
+        </div>
+        <div id="noChannelsMsg" style="display:none;"><b>Каналы не выбраны</b><br>выберите параметры слева</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="readouts">
+    <div class="ro-tabs">
+      <button class="ro-tab active" data-tab="values">Значения</button>
+      <button class="ro-tab" data-tab="table">Таблица</button>
+    </div>
+
+    <div class="ro-pane active" data-pane="values">
+      <div id="configPanel"></div>
+      <div id="readoutsList"></div>
+      <div class="param-filters" id="paramFilters">
+        <div class="pf-hdr" id="pfHdr">
+          <span class="pf-caret">▸</span>
+          <span>Фильтры</span>
+          <span class="pf-count" id="pfCount"></span>
+        </div>
+        <div class="pf-body">
+          <div class="pf-list" id="pfList"></div>
+          <div class="pf-empty" id="pfEmpty">Выберите каналы слева, отметьте здесь и задайте min/max.</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="ro-pane" data-pane="table">
+      <div class="tp-section">
+        <div class="tp-config" id="tpConfig"></div>
+        <div class="tp-legend">
+          <span id="tpLegendMin">—</span>
+          <div class="tp-legend-bar"></div>
+          <span id="tpLegendMax">—</span>
+        </div>
+        <div class="tp-grid-wrap"><div class="tp-grid" id="tpGrid"></div></div>
+        <div class="tp-readout" id="tpReadout">—</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+/* ===== ПРЕДУСТАНОВКИ ДВИГАТЕЛЕЙ ===== */
+const ENGINE_PRESETS = {
+  custom: { label: '— Свой —', data: {} },
+  vaz21126: { label: 'ВАЗ 21126 (Приора 1.6 16V)', data: { displacement:1.6, cylinders:4, aspiration:'na', throttleSize:52, throttleType:'electronic', camManufacturer:'Stock', camIntakeLift:9.5, camIntakeDuration:260, camExhaustLift:9.0, camExhaustDuration:260, camPhase:0, injectorSize:250, fuelPressure:3.0, fuelType:'95', boostReferenced:false, ecuModel:'Stealth PCM', pistonManufacturer:'Stock', pistonBore:82, compressionRatio:11.0, pistonMaterial:'cast', rodManufacturer:'Stock', rodLength:133, rodMaterial:'stock', plugManufacturer:'NGK', plugModel:'BPR6ES', plugGap:1.0, plugHeatRange:'medium', coilType:'wasted', notes:'СЖ 11.0, требуется 95+.' } },
+  '3sgte-celica': { label: 'Toyota 3S-GTE (Celica GT-Four)', data: { displacement:2.0, cylinders:4, aspiration:'turbo', throttleSize:60, throttleType:'mechanical', camManufacturer:'Stock', camIntakeLift:8.5, camIntakeDuration:240, camExhaustLift:8.0, camExhaustDuration:240, camPhase:0, injectorSize:540, fuelPressure:3.0, fuelType:'98', boostReferenced:true, ecuModel:'Stealth PCM', pistonManufacturer:'Stock', pistonBore:86, compressionRatio:9.0, pistonMaterial:'forged', rodManufacturer:'Stock', rodLength:138, rodMaterial:'forged', plugManufacturer:'NGK', plugModel:'BKR7E', plugGap:0.8, plugHeatRange:'medium', coilType:'wasted', coilManufacturer:'Toyota', notes:'CT20b турбо.' } },
+  '3sgte-caldina': { label: 'Toyota 3S-GTE (Caldina GT-T)', data: { displacement:2.0, cylinders:4, aspiration:'turbo', throttleSize:60, throttleType:'electronic', camManufacturer:'Stock', camIntakeLift:8.5, camIntakeDuration:240, camExhaustLift:8.0, camExhaustDuration:240, camPhase:0, injectorSize:540, fuelPressure:3.0, fuelType:'98', boostReferenced:true, ecuModel:'Stealth PCM', pistonManufacturer:'Stock', pistonBore:86, compressionRatio:9.0, pistonMaterial:'forged', rodManufacturer:'Stock', rodLength:138, rodMaterial:'forged', plugManufacturer:'NGK', plugModel:'BKR7E', plugGap:0.8, plugHeatRange:'medium', coilType:'cop', coilManufacturer:'Toyota', notes:'CT15b турбо.' } },
+  '4g63t': { label: 'Mitsubishi 4G63T (Evo I–IX)', data: { displacement:2.0, cylinders:4, aspiration:'turbo', throttleSize:60, throttleType:'mechanical', camManufacturer:'Stock', camIntakeLift:9.5, camIntakeDuration:252, camExhaustLift:9.0, camExhaustDuration:252, camPhase:0, injectorSize:450, fuelPressure:3.0, fuelType:'98', boostReferenced:true, ecuModel:'Stealth PCM', pistonManufacturer:'Stock', pistonBore:85, compressionRatio:8.5, pistonMaterial:'forged', rodManufacturer:'Stock', rodLength:150, rodMaterial:'forged', plugManufacturer:'NGK', plugModel:'BPR7ES', plugGap:0.7, plugHeatRange:'medium', coilType:'cop', coilManufacturer:'Mitsubishi', notes:'Evo I–IX.' } },
+  '4b11t': { label: 'Mitsubishi 4B11T (Evo X)', data: { displacement:2.0, cylinders:4, aspiration:'turbo', throttleSize:60, throttleType:'electronic', camManufacturer:'Stock', camIntakeLift:9.8, camIntakeDuration:256, camExhaustLift:9.2, camExhaustDuration:256, camPhase:0, injectorSize:550, fuelPressure:3.5, fuelType:'98', boostReferenced:true, ecuModel:'Stealth PCM', pistonManufacturer:'Stock', pistonBore:86, compressionRatio:9.0, pistonMaterial:'forged', rodManufacturer:'Stock', rodLength:143, rodMaterial:'forged', plugManufacturer:'NGK', plugModel:'ILKR8E6', plugGap:0.7, plugHeatRange:'cold', coilType:'cop', coilManufacturer:'Mitsubishi', notes:'MIVEC.' } },
+  sr20det: { label: 'Nissan SR20DET (S13/S14/S15)', data: { displacement:2.0, cylinders:4, aspiration:'turbo', throttleSize:60, throttleType:'mechanical', camManufacturer:'Stock', camIntakeLift:9.0, camIntakeDuration:248, camExhaustLift:8.5, camExhaustDuration:248, camPhase:0, injectorSize:440, fuelPressure:3.0, fuelType:'98', boostReferenced:true, ecuModel:'Stealth PCM', pistonManufacturer:'Stock', pistonBore:86, compressionRatio:8.5, pistonMaterial:'forged', rodManufacturer:'Stock', rodLength:136, rodMaterial:'forged', plugManufacturer:'NGK', plugModel:'BKR7E', plugGap:0.8, plugHeatRange:'medium', coilType:'cop', coilManufacturer:'Nissan', notes:'S13/S14/S15 turbo.' } },
+  ca18det: { label: 'Nissan CA18DET (S13 180SX)', data: { displacement:1.8, cylinders:4, aspiration:'turbo', throttleSize:60, throttleType:'mechanical', camManufacturer:'Stock', camIntakeLift:8.5, camIntakeDuration:240, camExhaustLift:8.0, camExhaustDuration:240, camPhase:0, injectorSize:370, fuelPressure:3.0, fuelType:'98', boostReferenced:true, ecuModel:'Stealth PCM', pistonManufacturer:'Stock', pistonBore:83, compressionRatio:8.5, pistonMaterial:'forged', rodManufacturer:'Stock', rodLength:133, rodMaterial:'forged', plugManufacturer:'NGK', plugModel:'BKR6E', plugGap:0.8, plugHeatRange:'medium', coilType:'cop', coilManufacturer:'Nissan', notes:'Чугунный блок.' } },
+  ej205: { label: 'Subaru EJ205 (WRX 02-05)', data: { displacement:2.0, cylinders:4, aspiration:'turbo', throttleSize:60, throttleType:'mechanical', camManufacturer:'Stock', camIntakeLift:9.0, camIntakeDuration:250, camExhaustLift:8.5, camExhaustDuration:250, camPhase:0, injectorSize:440, fuelPressure:3.0, fuelType:'98', boostReferenced:true, ecuModel:'Stealth PCM', pistonManufacturer:'Stock', pistonBore:92, compressionRatio:8.0, pistonMaterial:'forged', rodManufacturer:'Stock', rodLength:130.5, rodMaterial:'forged', plugManufacturer:'NGK', plugModel:'BKR6E', plugGap:0.8, plugHeatRange:'medium', coilType:'cop', coilManufacturer:'Subaru', notes:'Оппозитный, AVCS.' } },
+  k20a: { label: 'Honda K20A (Type R / RSX-S)', data: { displacement:2.0, cylinders:4, aspiration:'na', throttleSize:64, throttleType:'electronic', camManufacturer:'Stock', camIntakeLift:11.5, camIntakeDuration:270, camExhaustLift:11.0, camExhaustDuration:270, camPhase:25, injectorSize:310, fuelPressure:3.5, fuelType:'98', boostReferenced:false, ecuModel:'Stealth PCM', pistonManufacturer:'Stock', pistonBore:86, compressionRatio:11.5, pistonMaterial:'cast', rodManufacturer:'Stock', rodLength:139, rodMaterial:'forged', plugManufacturer:'NGK', plugModel:'IZFR6K11', plugGap:1.1, plugHeatRange:'medium', coilType:'cop', coilManufacturer:'Honda', notes:'i-VTEC.' } },
+  '2jz-gte': { label: 'Toyota 2JZ-GTE (Supra / Aristo)', data: { displacement:3.0, cylinders:6, aspiration:'turbo', throttleSize:65, throttleType:'mechanical', camManufacturer:'Stock', camIntakeLift:9.0, camIntakeDuration:250, camExhaustLift:8.5, camExhaustDuration:250, camPhase:0, injectorSize:440, fuelPressure:3.0, fuelType:'98', boostReferenced:true, ecuModel:'Stealth PCM', pistonManufacturer:'Stock', pistonBore:86, compressionRatio:8.5, pistonMaterial:'forged', rodManufacturer:'Stock', rodLength:142, rodMaterial:'forged', plugManufacturer:'NGK', plugModel:'BKR6E', plugGap:0.8, plugHeatRange:'medium', coilType:'cop', coilManufacturer:'Toyota', notes:'Twin-turbo.' } },
+  rb26dett: { label: 'Nissan RB26DETT (Skyline GT-R)', data: { displacement:2.6, cylinders:6, aspiration:'turbo', throttleSize:65, throttleType:'mechanical', camManufacturer:'Stock', camIntakeLift:9.0, camIntakeDuration:252, camExhaustLift:8.5, camExhaustDuration:252, camPhase:0, injectorSize:444, fuelPressure:3.0, fuelType:'98', boostReferenced:true, ecuModel:'Stealth PCM', pistonManufacturer:'Stock', pistonBore:86, compressionRatio:8.5, pistonMaterial:'forged', rodManufacturer:'Stock', rodLength:121.5, rodMaterial:'forged', plugManufacturer:'NGK', plugModel:'BKR7E', plugGap:0.8, plugHeatRange:'medium', coilType:'cop', coilManufacturer:'Nissan', notes:'ITB, twin-turbo.' } },
+  ls3: { label: 'GM LS3 (6.2 V8)', data: { displacement:6.2, cylinders:8, aspiration:'na', throttleSize:90, throttleType:'electronic', camManufacturer:'Stock', camIntakeLift:13.0, camIntakeDuration:280, camExhaustLift:13.0, camExhaustDuration:280, camPhase:0, injectorSize:440, fuelPressure:4.0, fuelType:'95', boostReferenced:false, ecuModel:'Stealth PCM', pistonManufacturer:'Stock', pistonBore:103.25, compressionRatio:10.7, pistonMaterial:'cast', rodManufacturer:'Stock', rodLength:155, rodMaterial:'forged', plugManufacturer:'NGK', plugModel:'TR5IX', plugGap:1.0, plugHeatRange:'medium', coilType:'cop', coilManufacturer:'GM', notes:'~430 л.с.' } }
+};
+
+const CONFIG_KEY = 'mlvlg_engine_config';
+const DEFAULT_CONFIG = {
+  modelKey:'custom', throttleSize:60, throttleType:'electronic',
+  camManufacturer:'', camIntakeLift:10.0, camIntakeDuration:260,
+  camExhaustLift:10.0, camExhaustDuration:260, camPhase:0,
+  injectorSize:630, fuelPressure:3.0, fuelType:'95', boostReferenced:true,
+  ecuModel:'', ecuFirmware:'', pistonManufacturer:'', pistonBore:82,
+  compressionRatio:9.5, pistonMaterial:'forged',
+  rodManufacturer:'', rodLength:143, rodMaterial:'forged',
+  plugManufacturer:'', plugModel:'', plugGap:0.8, plugHeatRange:'medium',
+  coilType:'cop', coilManufacturer:'', coilModel:'',
+  displacement:2.0, aspiration:'turbo', cylinders:4, notes:''
+};
+let ENGINE_CONFIG = (() => {
+  try { return Object.assign({}, DEFAULT_CONFIG, JSON.parse(localStorage.getItem(CONFIG_KEY) || '{}')); }
+  catch(e) { return Object.assign({}, DEFAULT_CONFIG); }
+})();
+function persistConfig(){ try { localStorage.setItem(CONFIG_KEY, JSON.stringify(ENGINE_CONFIG)); } catch(e){} }
+function isConfigSet(){ return !!(ENGINE_CONFIG.ecuModel || ENGINE_CONFIG.pistonManufacturer || ENGINE_CONFIG.camManufacturer || ENGINE_CONFIG.rodManufacturer || (ENGINE_CONFIG.modelKey && ENGINE_CONFIG.modelKey !== 'custom')); }
+function updateConfigIndicator(){
+  const el = document.getElementById('configIndicator'); if (!el) return;
+  const c = ENGINE_CONFIG;
+  el.classList.toggle('set', isConfigSet());
+  if (isConfigSet()) {
+    const preset = ENGINE_PRESETS[c.modelKey];
+    el.textContent = preset && c.modelKey !== 'custom' ? '⚙ ' + preset.label.split(' ')[0] : `⚙ ${c.displacement.toFixed(1)}L`;
+  } else { el.textContent = '⚙ Конфиг'; }
+}
+
+let DATA = { time: [], series: [] };
+let N = DATA.time.length;
+let seriesByKey = {};
+let active = new Set();
+let currentIndex = 0;
+let currentFloatIndex = 0;
+let hoverIndex = null, playing = false;
+let loopPlayback = false;
+let playRAF = null, lastFrameTime = null;
+let zoomFactor = 1, panOffset = 0;
+let injectorSize = ENGINE_CONFIG.injectorSize;
+let cylinderCount = ENGINE_CONFIG.cylinders;
+let fuelPressure = ENGINE_CONFIG.fuelPressure;
+let tableXAxis = 'RPM', tableYAxis = 'MAP', tableCellChannelName = 'AFR';
+let tableAggMode = 'avg', tableBinsX = 10, tableBinsY = 10;
+let tableXMin = null, tableXMax = null, tableYMin = null, tableYMax = null;
+let tableAgg = null;
+
+const scrubber = document.getElementById('scrubber');
+const curTimeEl = document.getElementById('curTime');
+const totalTimeEl = document.getElementById('totalTime');
+const playBtn = document.getElementById('playBtn');
+const speedSelect = document.getElementById('speedSelect');
+const paramsListEl = document.getElementById('paramsList');
+const searchBox = document.getElementById('searchBox');
+const readoutsListEl = document.getElementById('readoutsList');
+const configPanelEl = document.getElementById('configPanel');
+const fileInput = document.getElementById('fileInput');
+const loadBtn = document.getElementById('loadBtn');
+const holder = document.getElementById('canvasHolder');
+const canvas = document.getElementById('chart');
+const ctx = canvas.getContext('2d');
+const tooltip = document.getElementById('tooltip');
+const emptyState = document.getElementById('emptyState');
+const zoomHint = document.getElementById('zoomHint');
+const PAD = { top: 16, right: 14, bottom: 22, left: 14 };
+
+function showToast(text){
+  const el = document.getElementById('toast'); if (!el) return;
+  el.textContent = text; el.classList.add('show');
+  clearTimeout(el._t); el._t = setTimeout(() => el.classList.remove('show'), 3500);
+}
+function fmtVal(v, digits){
+  if (v === null || v === undefined || Number.isNaN(v)) return '—';
+  return v.toFixed(digits !== undefined ? digits : 1);
+}
+function decideDigits(s){ const span = s.max - s.min; return span < 3 ? 2 : span < 50 ? 1 : 0; }
+function buildOptions(list, sel){
+  return list.map(o => {
+    const val = typeof o === 'object' ? o[0] : o;
+    const lbl = typeof o === 'object' ? o[1] : (o || '—');
+    return `<option value="${val}"${val === sel ? ' selected' : ''}>${lbl}</option>`;
+  }).join('');
+}
+
+function findFloatIndexForTime(t){
+  if (N === 0) return 0;
+  if (t <= DATA.time[0]) return 0;
+  if (t >= DATA.time[N-1]) return N - 1;
+  let lo = 0, hi = N - 1;
+  while (lo + 1 < hi) { const mid = (lo + hi) >> 1; if (DATA.time[mid] <= t) lo = mid; else hi = mid; }
+  const t0 = DATA.time[lo], t1 = DATA.time[hi];
+  if (t1 === t0) return lo;
+  return lo + (t - t0) / (t1 - t0);
+}
+function interpolateTimeAt(fIdx){
+  if (N === 0) return 0;
+  fIdx = Math.max(0, Math.min(N - 1, fIdx));
+  const i0 = Math.floor(fIdx), i1 = Math.min(N - 1, i0 + 1);
+  if (i0 === i1) return DATA.time[i0];
+  return DATA.time[i0] + (DATA.time[i1] - DATA.time[i0]) * (fIdx - i0);
+}
+function getInterpolatedValue(series, fIdx){
+  if (!series || !series.values) return null;
+  fIdx = Math.max(0, Math.min(N - 1, fIdx));
+  const i0 = Math.floor(fIdx), i1 = Math.min(N - 1, i0 + 1), frac = fIdx - i0;
+  const v0 = series.values[i0], v1 = series.values[i1];
+  if (v0 === null || v0 === undefined || !isFinite(v0)) return (v1 === null || v1 === undefined || !isFinite(v1)) ? null : v1;
+  if (v1 === null || v1 === undefined || !isFinite(v1)) return v0;
+  return v0 + (v1 - v0) * frac;
+}
+
+let categories = [];
+function rebuildCategories(){ categories = []; DATA.series.forEach(s => { if (!categories.includes(s.category)) categories.push(s.category); }); }
+function renderParamsList(filter){
+  const f = (filter || '').trim().toLowerCase();
+  paramsListEl.innerHTML = '';
+  categories.forEach(cat => {
+    const items = DATA.series.filter(s => s.category === cat && (!f || s.name.toLowerCase().includes(f)));
+    if (items.length === 0) return;
+    const hdr = document.createElement('div');
+    hdr.className = 'cat-label';
+    hdr.textContent = cat === 'Calculated' ? 'Расчётные' : cat;
+    paramsListEl.appendChild(hdr);
+    items.forEach(s => {
+      const row = document.createElement('div');
+      row.className = 'param-row' + (active.has(s.key) ? ' active' : '');
+      row.innerHTML = `<span class="swatch"></span><span class="param-name">${s.name}</span><span class="param-unit">${s.unit || ''}</span>`;
+      const sw = row.querySelector('.swatch');
+      if (active.has(s.key)) { sw.style.background = s.color; sw.style.boxShadow = `0 0 6px ${s.color}`; }
+      row.addEventListener('click', () => toggleParam(s.key));
+      paramsListEl.appendChild(row);
+    });
+  });
+}
+function toggleParam(key){
+  if (active.has(key)) active.delete(key); else active.add(key);
+  renderParamsList(searchBox.value); renderReadouts(); renderParamFilters(); drawChart();
+}
+searchBox.addEventListener('input', () => renderParamsList(searchBox.value));
+
+function calculateHP(fIdx){
+  if (N === 0) return 0;
+  const dutyS = DATA.series.find(s => s.name === 'Duty Cycle1');
+  const afrS = DATA.series.find(s => s.name === 'AFR');
+  if (!dutyS || !afrS) return 0;
+  const duty = getInterpolatedValue(dutyS, fIdx);
+  const afr = getInterpolatedValue(afrS, fIdx);
+  if (duty === null || afr === null || !isFinite(duty) || !isFinite(afr)) return 0;
+  const eff = injectorSize * Math.sqrt(fuelPressure / 3.0);
+  return Math.max(0, (cylinderCount * eff * ((duty / 100) * 60) / 1000) * 0.75 * afr * 0.34);
+}
+function calculateAirVolume(fIdx){
+  if (N === 0) return { kgPerHour: 0, cfm: 0 };
+  const dutyS = DATA.series.find(s => s.name === 'Duty Cycle1');
+  const afrS = DATA.series.find(s => s.name === 'AFR');
+  if (!dutyS || !afrS) return { kgPerHour: 0, cfm: 0 };
+  const mapS = DATA.series.find(s => s.name === 'MAP');
+  const matS = DATA.series.find(s => s.name === 'MAT');
+  const duty = getInterpolatedValue(dutyS, fIdx);
+  const afr = getInterpolatedValue(afrS, fIdx);
+  const mapV = mapS ? getInterpolatedValue(mapS, fIdx) : 100;
+  const matV = matS ? getInterpolatedValue(matS, fIdx) : 25;
+  const map = (mapV === null) ? 100 : mapV;
+  const mat = (matV === null) ? 25 : matV;
+  if (duty === null || afr === null || !isFinite(duty) || !isFinite(afr)) return { kgPerHour: 0, cfm: 0 };
+  const eff = injectorSize * Math.sqrt(fuelPressure / 3.0);
+  const totalFuel = eff * cylinderCount * (duty / 100);
+  const fuelG = totalFuel * 0.735;
+  const airG = fuelG * afr;
+  const airKgH = (airG * 60) / 1000;
+  const k = mat + 273.15;
+  const density = (map * 1000) / (287 * k);
+  return { kgPerHour: airKgH, cfm: (airG / density) * 0.0353147 };
+}
+function computeMaxStats(){
+  const dutyS = DATA.series.find(s => s.name === 'Duty Cycle1');
+  const afrS = DATA.series.find(s => s.name === 'AFR');
+  const rpmS = DATA.series.find(s => s.name === 'RPM');
+  if (!dutyS || !afrS) return { maxHP: 0, maxAir: 0, maxHPIdx: -1, maxAirIdx: -1, maxHPRPM: 0, maxAirRPM: 0 };
+  const eff = injectorSize * Math.sqrt(fuelPressure / 3.0);
+  let maxHP = 0, maxAir = 0, maxHPIdx = -1, maxAirIdx = -1;
+  for (let i = 0; i < N; i++) {
+    const duty = dutyS.values[i], afr = afrS.values[i];
+    if (duty === null || afr === null || !isFinite(duty) || !isFinite(afr) || duty <= 0 || afr <= 0) continue;
+    const hp = (cylinderCount * eff * ((duty / 100) * 60) / 1000) * 0.75 * afr * 0.34;
+    if (hp > maxHP) { maxHP = hp; maxHPIdx = i; }
+    const air = (((eff * cylinderCount * (duty / 100)) * 0.735) * afr * 60) / 1000;
+    if (air > maxAir) { maxAir = air; maxAirIdx = i; }
+  }
+  return { maxHP, maxAir, maxHPIdx, maxAirIdx,
+    maxHPRPM: (rpmS && maxHPIdx >= 0) ? rpmS.values[maxHPIdx] : 0,
+    maxAirRPM: (rpmS && maxAirIdx >= 0) ? rpmS.values[maxAirIdx] : 0 };
+}
+function updateMaxDisplay(){
+  const stats = computeMaxStats();
+  const hpEl = document.getElementById('maxHP');
+  const airEl = document.getElementById('maxAir');
+  if (hpEl) {
+    if (stats.maxHP > 0) {
+      hpEl.innerHTML = `<span class="max-label">ПИК HP</span><span class="max-val" style="color:#ff6b6b;">${stats.maxHP.toFixed(0)}<small>л.с. @ ${stats.maxHPRPM.toFixed(0)} об/мин</small></span>`;
+      hpEl.style.cursor = 'pointer';
+      hpEl.onclick = () => { if (stats.maxHPIdx >= 0) setFloatIndex(stats.maxHPIdx); };
+    } else { hpEl.innerHTML = `<span class="max-label">ПИК HP</span><span class="max-val" style="color:#ff6b6b;">—</span>`; hpEl.style.cursor='default'; hpEl.onclick=null; }
+  }
+  if (airEl) {
+    if (stats.maxAir > 0) {
+      airEl.innerHTML = `<span class="max-label">ПИК ВОЗДУХА</span><span class="max-val" style="color:#4ec9ff;">${stats.maxAir.toFixed(0)}<small>кг/ч @ ${stats.maxAirRPM.toFixed(0)} об/мин</small></span>`;
+      airEl.style.cursor = 'pointer';
+      airEl.onclick = () => { if (stats.maxAirIdx >= 0) setFloatIndex(stats.maxAirIdx); };
+    } else { airEl.innerHTML = `<span class="max-label">ПИК ВОЗДУХА</span><span class="max-val" style="color:#4ec9ff;">—</span>`; airEl.style.cursor='default'; airEl.onclick=null; }
+  }
+}
+
+function renderConfigPanel(){
+  if (!configPanelEl) return;
+  configPanelEl.innerHTML = `
+    <div class="readout-hdr">Настройки двигателя</div>
+    <div class="readout-card" style="border-left-color:var(--amber);padding:6px 12px 8px;">
+      <div class="rc-top" style="color:var(--amber);">⚙ Размер форсунки</div>
+      <div style="display:flex;gap:4px;align-items:center;">
+        <input type="number" id="injectorInput" value="${injectorSize}" min="100" max="2000" step="10" style="width:70px;padding:4px;background:var(--void);border:1px solid var(--border);color:var(--text);font-family:var(--mono);font-size:11px;border-radius:2px;">
+        <span style="color:var(--text-dimmer);font-size:9.5px;">куб.см/мин</span>
+      </div>
+    </div>
+    <div class="readout-card" style="border-left-color:var(--amber);padding:6px 12px 8px;">
+      <div class="rc-top" style="color:var(--amber);">⚙ Цилиндры</div>
+      <div style="display:flex;gap:4px;align-items:center;">
+        <input type="number" id="cylinderInput" value="${cylinderCount}" min="1" max="16" step="1" style="width:70px;padding:4px;background:var(--void);border:1px solid var(--border);color:var(--text);font-family:var(--mono);font-size:11px;border-radius:2px;">
+        <span style="color:var(--text-dimmer);font-size:9.5px;">шт</span>
+      </div>
+    </div>
+    <div class="readout-card" style="border-left-color:var(--amber);padding:6px 12px 8px;">
+      <div class="rc-top" style="color:var(--amber);">⚙ Давление топлива</div>
+      <div style="display:flex;gap:4px;align-items:center;">
+        <input type="number" id="fuelPressureInput" value="${fuelPressure}" min="1.5" max="8" step="0.1" style="width:70px;padding:4px;background:var(--void);border:1px solid var(--border);color:var(--text);font-family:var(--mono);font-size:11px;border-radius:2px;">
+        <span style="color:var(--text-dimmer);font-size:9.5px;">бар</span>
+      </div>
+    </div>
+    <div class="readout-hdr">Текущие значения</div>
+  `;
+  const injectorInput = document.getElementById('injectorInput');
+  if (injectorInput) injectorInput.addEventListener('change', () => {
+    injectorSize = parseFloat(injectorInput.value) || 630;
+    ENGINE_CONFIG.injectorSize = injectorSize; persistConfig(); updateComputedReadouts(); updateMaxDisplay();
+  });
+  const cylinderInput = document.getElementById('cylinderInput');
+  if (cylinderInput) cylinderInput.addEventListener('change', () => {
+    cylinderCount = parseInt(cylinderInput.value) || 4;
+    ENGINE_CONFIG.cylinders = cylinderCount; persistConfig(); updateComputedReadouts(); updateMaxDisplay();
+  });
+  const fuelPressureInput = document.getElementById('fuelPressureInput');
+  if (fuelPressureInput) fuelPressureInput.addEventListener('change', () => {
+    fuelPressure = parseFloat(fuelPressureInput.value) || 3.0;
+    ENGINE_CONFIG.fuelPressure = fuelPressure; persistConfig(); updateComputedReadouts(); updateMaxDisplay();
+  });
+}
+function renderReadouts(){
+  const keys = [...active];
+  if (keys.length === 0) { readoutsListEl.innerHTML = '<div class="readouts-empty">Выберите каналы слева.</div>'; return; }
+  const hp = calculateHP(currentFloatIndex), air = calculateAirVolume(currentFloatIndex);
+  let html = '';
+  html += `<div class="readout-card" style="border-left-color:#ff6b6b;"><div class="rc-top"><span class="rc-dot" style="background:#ff6b6b"></span>Оценка мощности</div><div><span class="rc-val" style="color:#ff6b6b" data-calc="hp">${hp.toFixed(0)}</span><span class="rc-unit">л.с.</span></div></div>`;
+  html += `<div class="readout-card" style="border-left-color:#4ec9ff;"><div class="rc-top"><span class="rc-dot" style="background:#4ec9ff"></span>Массовый расход воздуха</div><div><span class="rc-val" style="color:#4ec9ff" data-calc="air">${air.kgPerHour.toFixed(1)}</span><span class="rc-unit">кг/ч</span></div><div style="font-size:10px;color:var(--text-dimmer);margin-top:2px;"><span data-calc="cfm">${air.cfm.toFixed(0)}</span> CFM</div></div>`;
+  keys.forEach(key => {
+    const s = seriesByKey[key];
+    const v = getInterpolatedValue(s, currentFloatIndex);
+    html += `<div class="readout-card" style="border-left-color:${s.color}"><div class="rc-top"><span class="rc-dot" style="background:${s.color}"></span>${s.name}</div><div><span class="rc-val" style="color:${s.color}" data-readout-key="${key}">${fmtVal(v, decideDigits(s))}</span><span class="rc-unit">${s.unit || ''}</span></div></div>`;
+  });
+  readoutsListEl.innerHTML = html;
+}
+function updateComputedReadouts(){
+  const hp = calculateHP(currentFloatIndex), air = calculateAirVolume(currentFloatIndex);
+  const hpEl = readoutsListEl.querySelector('[data-calc="hp"]');
+  const airEl = readoutsListEl.querySelector('[data-calc="air"]');
+  const cfmEl = readoutsListEl.querySelector('[data-calc="cfm"]');
+  if (hpEl) hpEl.textContent = hp.toFixed(0);
+  if (airEl) airEl.textContent = air.kgPerHour.toFixed(1);
+  if (cfmEl) cfmEl.textContent = air.cfm.toFixed(0);
+  [...active].forEach(key => {
+    const s = seriesByKey[key];
+    const el = readoutsListEl.querySelector(`[data-readout-key="${key}"]`);
+    if (el && s) el.textContent = fmtVal(getInterpolatedValue(s, currentFloatIndex), decideDigits(s));
+  });
+}
+
+function getAxisSeries(name){ return DATA.series.find(s => s.name === name) || null; }
+function computeAxisRange(series, userMin, userMax){
+  if (!series) return null;
+  const mn = (userMin !== null && isFinite(userMin)) ? userMin : series.min;
+  const mx = (userMax !== null && isFinite(userMax)) ? userMax : series.max;
+  if (mx <= mn) return { min: mn, max: mn + 1 };
+  return { min: mn, max: mx };
+}
+function getCellForValue(v, mn, mx, bins){
+  if (v === null || v === undefined || !isFinite(v)) return null;
+  const span = mx - mn;
+  if (span <= 0) return { bin: 0, lo: mn, hi: mn + span };
+  const t = (v - mn) / span;
+  const clamped = Math.max(0, Math.min(0.999999, t));
+  const bin = Math.min(bins - 1, Math.max(0, Math.floor(clamped * bins)));
+  return { bin, lo: mn + span * (bin / bins), hi: mn + span * ((bin + 1) / bins) };
+}
+function heatColor(t){
+  t = Math.max(0, Math.min(1, t));
+  const h = t < 0.5 ? 220 - 80 * (t * 2) : 140 - 140 * ((t - 0.5) * 2);
+  const l = 24 + t * 22;
+  return `hsl(${h}, 55%, ${l}%)`;
+}
+function renderTableConfig(){
+  const el = document.getElementById('tpConfig'); if (!el) return;
+  const names = DATA.series.map(s => s.name).filter(Boolean);
+  if (!names.length) { el.innerHTML = '<span class="tp-empty" style="font-size:9.5px;color:var(--text-dimmer);grid-column:1/-1;">Загрузите лог для настройки осей</span>'; return; }
+  const mkOpts = (sel) => names.map(n => `<option value="${n}"${n === sel ? ' selected' : ''}>${n}</option>`).join('');
+  const cellChan = names.includes(tableCellChannelName) ? tableCellChannelName : (names.includes('AFR') ? 'AFR' : names[0]);
+  el.innerHTML = `
+    <label><span class="lbl">X</span><select id="tpXSel">${mkOpts(tableXAxis)}</select></label>
+    <label><span class="lbl">Y</span><select id="tpYSel">${mkOpts(tableYAxis)}</select></label>
+    <label><span class="lbl">Столб.</span><input type="number" id="tpBinsX" min="2" max="24" value="${tableBinsX}"></label>
+    <label><span class="lbl">Строк</span><input type="number" id="tpBinsY" min="2" max="24" value="${tableBinsY}"></label>
+    <label class="tp-full"><span class="lbl">Значение в ячейке</span><select id="tpCellChan">${mkOpts(cellChan)}</select></label>
+    <label class="tp-full"><span class="lbl">Агрегат</span><select id="tpAggMode">
+      <option value="avg"${tableAggMode==='avg'?' selected':''}>среднее</option>
+      <option value="min"${tableAggMode==='min'?' selected':''}>минимум</option>
+      <option value="max"${tableAggMode==='max'?' selected':''}>максимум</option>
+    </select></label>`;
+  tableCellChannelName = cellChan;
+  const attach = (id, fn) => { const e = document.getElementById(id); if (e) e.addEventListener('change', fn); };
+  attach('tpXSel', e => { tableXAxis = e.target.value; tableXMin = tableXMax = null; recomputeTableAgg(); renderTableConfig(); });
+  attach('tpYSel', e => { tableYAxis = e.target.value; tableYMin = tableYMax = null; recomputeTableAgg(); renderTableConfig(); });
+  attach('tpBinsX', e => { tableBinsX = Math.max(2, Math.min(24, parseInt(e.target.value) || 10)); recomputeTableAgg(); });
+  attach('tpBinsY', e => { tableBinsY = Math.max(2, Math.min(24, parseInt(e.target.value) || 10)); recomputeTableAgg(); });
+  attach('tpCellChan', e => { tableCellChannelName = e.target.value; recomputeTableAgg(); });
+  attach('tpAggMode', e => { tableAggMode = e.target.value; recomputeTableAgg(); });
+}
+function recomputeTableAgg(){
+  if (N === 0 || !DATA.series.length) { tableAgg = null; renderTableGrid(); updateActiveCell(); return; }
+  const xS = getAxisSeries(tableXAxis), yS = getAxisSeries(tableYAxis), cS = getAxisSeries(tableCellChannelName);
+  if (!xS || !yS || !cS) { tableAgg = null; renderTableGrid(); updateActiveCell(); return; }
+  const xRange = computeAxisRange(xS, tableXMin, tableXMax);
+  const yRange = computeAxisRange(yS, tableYMin, tableYMax);
+  const cells = [];
+  for (let r = 0; r < tableBinsY; r++) { const row = []; for (let c = 0; c < tableBinsX; c++) row.push({ sum:0, count:0, min:Infinity, max:-Infinity }); cells.push(row); }
+  let gMin = Infinity, gMax = -Infinity;
+  for (let i = 0; i < N; i++) {
+    const xv = xS.values[i], yv = yS.values[i], cv = cS.values[i];
+    if (xv === null || yv === null || cv === null) continue;
+    const xc = getCellForValue(xv, xRange.min, xRange.max, tableBinsX);
+    const yc = getCellForValue(yv, yRange.min, yRange.max, tableBinsY);
+    if (!xc || !yc) continue;
+    const cell = cells[yc.bin][xc.bin];
+    cell.sum += cv; cell.count++;
+    if (cv < cell.min) cell.min = cv;
+    if (cv > cell.max) cell.max = cv;
+  }
+  for (let r = 0; r < tableBinsY; r++) for (let c = 0; c < tableBinsX; c++) {
+    const cell = cells[r][c]; if (cell.count === 0) continue;
+    const v = tableAggMode === 'min' ? cell.min : tableAggMode === 'max' ? cell.max : cell.sum / cell.count;
+    if (v < gMin) gMin = v; if (v > gMax) gMax = v;
+  }
+  if (!isFinite(gMin)) { gMin = 0; gMax = 1; }
+  if (gMax <= gMin) gMax = gMin + 1;
+  tableAgg = { cells, globalMin:gMin, globalMax:gMax, channel:cS, xS, yS, xRange, yRange };
+  renderTableGrid(); updateActiveCell();
+}
+function renderTableGrid(){
+  const grid = document.getElementById('tpGrid');
+  const legendMin = document.getElementById('tpLegendMin');
+  const legendMax = document.getElementById('tpLegendMax');
+  if (!grid) return;
+  grid.style.gridTemplateColumns = `repeat(${tableBinsX}, 1fr)`;
+  grid.style.gridTemplateRows = `repeat(${tableBinsY}, 1fr)`;
+  grid.innerHTML = '';
+  if (!tableAgg) {
+    for (let r = 0; r < tableBinsY; r++) for (let c = 0; c < tableBinsX; c++) {
+      const cell = document.createElement('div'); cell.className = 'tp-cell'; cell.dataset.x = c; cell.dataset.y = r; grid.appendChild(cell);
+    }
+    if (legendMin) legendMin.textContent = '—'; if (legendMax) legendMax.textContent = '—'; return;
+  }
+  const span = tableAgg.globalMax - tableAgg.globalMin;
+  const norm = v => span > 0 ? (v - tableAgg.globalMin) / span : 0.5;
+  const cd = decideDigits(tableAgg.channel);
+  for (let r = 0; r < tableBinsY; r++) {
+    const binY = tableBinsY - 1 - r;
+    for (let c = 0; c < tableBinsX; c++) {
+      const d = tableAgg.cells[binY][c];
+      const cell = document.createElement('div'); cell.className = 'tp-cell'; cell.dataset.x = c; cell.dataset.y = r;
+      if (d.count === 0) { cell.classList.add('empty'); }
+      else {
+        const v = tableAggMode === 'min' ? d.min : tableAggMode === 'max' ? d.max : d.sum / d.count;
+        cell.style.background = heatColor(norm(v));
+        const valSpan = document.createElement('span'); valSpan.className = 'cell-val'; valSpan.textContent = v.toFixed(cd); cell.appendChild(valSpan);
+        const cntSpan = document.createElement('span'); cntSpan.className = 'cell-count'; cntSpan.textContent = d.count; cell.appendChild(cntSpan);
+        cell.title = `${tableCellChannelName}: ср ${(d.sum/d.count).toFixed(cd)}, мин ${d.min.toFixed(cd)}, макс ${d.max.toFixed(cd)}, сэмплов: ${d.count}`;
+      }
+      grid.appendChild(cell);
+    }
+  }
+  requestAnimationFrame(() => {
+    const first = grid.querySelector('.tp-cell'); if (!first) return;
+    const wpx = first.getBoundingClientRect().width;
+    let fs = 6;
+    if (wpx >= 34) fs = 11; else if (wpx >= 28) fs = 10; else if (wpx >= 23) fs = 9; else if (wpx >= 18) fs = 8; else if (wpx >= 14) fs = 7;
+    grid.style.fontSize = fs + 'px';
+    grid.querySelectorAll('.cell-count').forEach(el => el.style.display = wpx < 22 ? 'none' : '');
+  });
+  if (legendMin) legendMin.textContent = tableAgg.globalMin.toFixed(cd);
+  if (legendMax) legendMax.textContent = tableAgg.globalMax.toFixed(cd);
+}
+function updateActiveCell(){
+  const grid = document.getElementById('tpGrid');
+  const readout = document.getElementById('tpReadout');
+  if (!grid || !readout) return;
+  grid.querySelectorAll('.tp-cell.on').forEach(c => c.classList.remove('on'));
+  if (!tableAgg || !tableAgg.xS || !tableAgg.yS) { readout.innerHTML = '<span class="tp-empty">Лог не загружен</span>'; return; }
+  const xv = getInterpolatedValue(tableAgg.xS, currentFloatIndex);
+  const yv = getInterpolatedValue(tableAgg.yS, currentFloatIndex);
+  const xc = getCellForValue(xv, tableAgg.xRange.min, tableAgg.xRange.max, tableBinsX);
+  const yc = getCellForValue(yv, tableAgg.yRange.min, tableAgg.yRange.max, tableBinsY);
+  if (!xc || !yc) { readout.innerHTML = '<span class="tp-empty">Значение недоступно</span>'; return; }
+  const row = tableBinsY - 1 - yc.bin;
+  const cell = grid.querySelector(`.tp-cell[data-x="${xc.bin}"][data-y="${row}"]`);
+  if (cell) cell.classList.add('on');
+  const xd = decideDigits(tableAgg.xS), yd = decideDigits(tableAgg.yS);
+  const cd = decideDigits(tableAgg.channel);
+  const d = tableAgg.cells[yc.bin][xc.bin];
+  let cellInfo;
+  if (d.count > 0) {
+    const shown = tableAggMode === 'min' ? d.min : tableAggMode === 'max' ? d.max : d.sum / d.count;
+    cellInfo = `в ячейке <b>${tableCellChannelName} = ${shown.toFixed(cd)} ${tableAgg.channel.unit || ''}</b><br><span style="color:var(--text-dimmer)">сэмплов: ${d.count} · мин ${d.min.toFixed(cd)} · макс ${d.max.toFixed(cd)}</span>`;
+  } else cellInfo = '<span class="tp-empty">в ячейке нет данных</span>';
+  readout.innerHTML =
+    `X: <b>${tableXAxis} = ${fmtVal(xv, xd)} ${tableAgg.xS.unit || ''}</b> · столбец ${xc.bin + 1}/${tableBinsX}<br>` +
+    `Y: <b>${tableYAxis} = ${fmtVal(yv, yd)} ${tableAgg.yS.unit || ''}</b> · строка ${yc.bin + 1}/${tableBinsY}<br>` + cellInfo;
+}
+document.getElementById('tpGrid') && document.getElementById('tpGrid').addEventListener('click', (e) => {
+  const cell = e.target.closest('.tp-cell'); if (!cell || !N || !tableAgg) return;
+  const c = parseInt(cell.dataset.x, 10), r = parseInt(cell.dataset.y, 10);
+  if (!isFinite(c) || !isFinite(r)) return;
+  const xS = tableAgg.xS, yS = tableAgg.yS;
+  const xSpan = (tableAgg.xRange.max - tableAgg.xRange.min) / tableBinsX;
+  const ySpan = (tableAgg.yRange.max - tableAgg.yRange.min) / tableBinsY;
+  const xLo = tableAgg.xRange.min + c * xSpan, xHi = xLo + xSpan;
+  const yBin = tableBinsY - 1 - r;
+  const yLo = tableAgg.yRange.min + yBin * ySpan, yHi = yLo + ySpan;
+  for (let i = 0; i < N; i++) {
+    const xv = xS.values[i], yv = yS.values[i];
+    if (xv === null || yv === null) continue;
+    const xOk = (c === tableBinsX - 1) ? (xv >= xLo && xv <= xHi) : (xv >= xLo && xv < xHi);
+    const yOk = (yBin === tableBinsY - 1) ? (yv >= yLo && yv <= yHi) : (yv >= yLo && yv < yHi);
+    if (xOk && yOk) { stopPlaying(); setFloatIndex(i); return; }
+  }
+});
+document.querySelectorAll('.ro-tab').forEach(tab => {
+  tab.addEventListener('click', () => {
+    const name = tab.dataset.tab;
+    document.querySelectorAll('.ro-tab').forEach(t => t.classList.toggle('active', t.dataset.tab === name));
+    document.querySelectorAll('.ro-pane').forEach(p => p.classList.toggle('active', p.dataset.pane === name));
+    if (name === 'table') { renderTableConfig(); if (!tableAgg) recomputeTableAgg(); else { renderTableGrid(); updateActiveCell(); } }
+  });
+});
+
+function setIndex(i){
+  if (N === 0) {
+    currentIndex = 0; currentFloatIndex = 0;
+    curTimeEl.textContent = '0.0000s';
+    scrubber.style.setProperty('--scrub-pct', '0%');
+    drawChart(); updateActiveCell(); return;
+  }
+  currentIndex = Math.max(0, Math.min(N - 1, i|0));
+  currentFloatIndex = currentIndex;
+  scrubber.value = currentFloatIndex.toFixed(3);
+  scrubber.style.setProperty('--scrub-pct', (N > 1 ? (currentFloatIndex / (N - 1) * 100) : 0) + '%');
+  curTimeEl.textContent = DATA.time[currentIndex].toFixed(4) + 's';
+  if (zoomFactor > 1 && N > 1) {
+    const rect = holder.getBoundingClientRect();
+    const w = rect.width;
+    const usableW = w - PAD.left - PAD.right;
+    const centerX = usableW * 0.4;
+    const norm = currentFloatIndex / (N - 1);
+    panOffset = centerX - norm * usableW * zoomFactor;
+    clampPan(w);
+  } else if (zoomFactor <= 1) panOffset = 0;
+  updateComputedReadouts(); updateActiveCell(); drawChart();
+}
+
+function setFloatIndex(fIdx){
+  if (N === 0) return;
+  fIdx = Math.max(0, Math.min(N - 1, fIdx));
+  currentFloatIndex = fIdx;
+  currentIndex = Math.round(fIdx);
+  scrubber.value = fIdx.toFixed(3);
+  scrubber.style.setProperty('--scrub-pct', (N > 1 ? (fIdx / (N - 1) * 100) : 0) + '%');
+  curTimeEl.textContent = interpolateTimeAt(fIdx).toFixed(4) + 's';
+  if (zoomFactor > 1 && N > 1) {
+    const rect = holder.getBoundingClientRect();
+    const w = rect.width;
+    const usableW = w - PAD.left - PAD.right;
+    const centerX = usableW * 0.4;
+    const norm = fIdx / (N - 1);
+    panOffset = centerX - norm * usableW * zoomFactor;
+    clampPan(w);
+  } else if (zoomFactor <= 1) panOffset = 0;
+  updateComputedReadouts(); updateActiveCell(); drawChart();
+}
+
+scrubber.addEventListener('input', () => {
+  stopPlaying();
+  const v = parseFloat(scrubber.value);
+  if (isFinite(v)) setFloatIndex(v);
+});
+
+document.getElementById('prevBtn').addEventListener('click', () => { stopPlaying(); setFloatIndex(Math.floor(currentFloatIndex) - 1); });
+document.getElementById('nextBtn').addEventListener('click', () => { stopPlaying(); setFloatIndex(Math.ceil(currentFloatIndex) + 1); });
+
+function stopPlaying(){
+  playing = false; playBtn.textContent = '▶';
+  if (playRAF) cancelAnimationFrame(playRAF);
+  lastFrameTime = null;
+}
+function startPlaying(){
+  if (N === 0) return;
+  if (loopPlayback && currentFloatIndex >= N - 1 - 1e-9) setFloatIndex(0);
+  playing = true; playBtn.textContent = '⏸';
+  lastFrameTime = null;
+  playRAF = requestAnimationFrame(playTick);
+}
+
+function playTick(ts){
+  if (!playing) return;
+  if (lastFrameTime === null) lastFrameTime = ts;
+  const dt = Math.min(1.0, (ts - lastFrameTime) / 1000);
+  lastFrameTime = ts;
+  const speed = parseFloat(speedSelect.value) || 1;
+  const currentT = interpolateTimeAt(currentFloatIndex);
+  const targetT = currentT + dt * speed;
+  const endT = DATA.time[N - 1];
+
+  if (targetT >= endT) {
+    if (loopPlayback) {
+      const duration = endT - DATA.time[0];
+      if (duration > 0) {
+        let remaining = targetT - endT;
+        remaining = ((remaining % duration) + duration) % duration;
+        const newT = DATA.time[0] + remaining;
+        setFloatIndex(findFloatIndexForTime(newT));
+      } else { setFloatIndex(0); }
+      playRAF = requestAnimationFrame(playTick);
+      return;
+    }
+    setFloatIndex(N - 1);
+    stopPlaying();
+    return;
+  }
+
+  const fIdx = findFloatIndexForTime(targetT);
+  setFloatIndex(fIdx);
+  playRAF = requestAnimationFrame(playTick);
+}
+playBtn.addEventListener('click', () => { if (playing) stopPlaying(); else startPlaying(); });
+
+const loopBtn = document.getElementById('loopBtn');
+function updateLoopBtn(){
+  loopBtn.classList.toggle('on', loopPlayback);
+  loopBtn.title = loopPlayback ? 'Цикл включён (L)' : 'Циклическое воспроизведение (L)';
+}
+loopBtn.addEventListener('click', () => {
+  loopPlayback = !loopPlayback; updateLoopBtn();
+  showToast(loopPlayback ? 'Цикл включён' : 'Цикл выключен');
+});
+updateLoopBtn();
+
+const SPEED_STEPS = [0.00001, 0.000025, 0.00005, 0.0001, 0.00025, 0.0005, 0.001, 0.0025, 0.005, 0.025, 0.05, 0.125, 0.25, 0.5, 1, 2, 5, 12.5, 30, 60];
+window.addEventListener('keydown', (e) => {
+  const tag = (e.target && e.target.tagName || '').toLowerCase();
+  if (tag === 'input' || tag === 'textarea' || tag === 'select') return;
+  if (e.key === 'Escape' && engineModal && engineModal.classList.contains('open')) { closeEngineDrawer(); return; }
+  if (e.code === 'Space') { e.preventDefault(); if (playing) stopPlaying(); else startPlaying(); return; }
+  if (e.key === 'l' || e.key === 'L' || e.key === 'д' || e.key === 'Д') {
+    e.preventDefault(); loopPlayback = !loopPlayback; updateLoopBtn();
+    showToast(loopPlayback ? 'Цикл включён' : 'Цикл выключен'); return;
+  }
+  if (e.key === '[' || e.key === ']') {
+    const cur = parseFloat(speedSelect.value);
+    let idx = SPEED_STEPS.indexOf(cur);
+    if (idx === -1) idx = SPEED_STEPS.findIndex(v => Math.abs(v - cur) < 1e-9);
+    if (idx === -1) idx = 8;
+    if (e.key === '[' && idx > 0) speedSelect.value = String(SPEED_STEPS[idx - 1]);
+    if (e.key === ']' && idx < SPEED_STEPS.length - 1) speedSelect.value = String(SPEED_STEPS[idx + 1]);
+    return;
+  }
+  if (zoomFactor <= 1) {
+    const step = e.ctrlKey ? 100 : (e.shiftKey ? 10 : 1);
+    if (e.key === 'ArrowLeft')  { e.preventDefault(); stopPlaying(); setFloatIndex(Math.floor(currentFloatIndex) - step); return; }
+    if (e.key === 'ArrowRight') { e.preventDefault(); stopPlaying(); setFloatIndex(Math.ceil(currentFloatIndex) + step); return; }
+    if (e.key === 'Home')       { e.preventDefault(); stopPlaying(); setFloatIndex(0); return; }
+    if (e.key === 'End')        { e.preventDefault(); stopPlaying(); setFloatIndex(N - 1); return; }
+    if (e.key === ',')          { e.preventDefault(); stopPlaying(); setFloatIndex(Math.floor(currentFloatIndex) - (e.shiftKey ? 10 : 1)); return; }
+    if (e.key === '.')          { e.preventDefault(); stopPlaying(); setFloatIndex(Math.ceil(currentFloatIndex) + (e.shiftKey ? 10 : 1)); return; }
+    return;
+  }
+  const rect = holder.getBoundingClientRect();
+  const panStep = (rect.width - PAD.left - PAD.right) * 0.1;
+  if (e.key === 'ArrowLeft')  { panOffset += panStep; clampPan(rect.width); drawChart(); }
+  else if (e.key === 'ArrowRight') { panOffset -= panStep; clampPan(rect.width); drawChart(); }
+});
+
+let paramFilters = {};
+let filterMask = null, filterAnyActive = false, lastFilterKeySig = null;
+const paramFiltersEl = document.getElementById('paramFilters');
+const paramFiltersList = document.getElementById('pfList');
+const paramFiltersEmpty = document.getElementById('pfEmpty');
+const pfHdr = document.getElementById('pfHdr');
+const pfCount = document.getElementById('pfCount');
+
+pfHdr.addEventListener('click', () => paramFiltersEl.classList.toggle('open'));
+
+function ensureFilterEntry(key){
+  if (paramFilters[key]) return paramFilters[key];
+  const s = seriesByKey[key];
+  const digits = s ? decideDigits(s) : 1;
+  paramFilters[key] = { enabled: false, min: s ? +s.min.toFixed(digits) : 0, max: s ? +s.max.toFixed(digits) : 1 };
+  return paramFilters[key];
+}
+function recomputeFilterMask(){
+  const entries = Object.keys(paramFilters).filter(k => paramFilters[k].enabled && seriesByKey[k]).map(k => [k, paramFilters[k]]);
+  if (!N || !entries.length) { filterMask = null; filterAnyActive = false; updatePfCount(); return; }
+  filterAnyActive = true;
+  const mask = new Uint8Array(N);
+  for (let i = 0; i < N; i++) {
+    let pass = true;
+    for (let j = 0; j < entries.length; j++) {
+      const s = seriesByKey[entries[j][0]], f = entries[j][1];
+      const v = s.values[i];
+      if (v === null || v === undefined || !isFinite(v) || v < f.min || v > f.max) { pass = false; break; }
+    }
+    mask[i] = pass ? 1 : 0;
+  }
+  filterMask = mask; updatePfCount();
+}
+function updatePfCount(){
+  if (!pfCount) return;
+  const activeFilters = Object.keys(paramFilters).filter(k => paramFilters[k].enabled).length;
+  if (activeFilters > 0) { pfCount.textContent = activeFilters + ' активн.'; pfCount.style.color = 'var(--amber)'; }
+  else { pfCount.textContent = ''; pfCount.style.color = ''; }
+}
+function renderParamFilters(){
+  const keys = [...active].filter(k => seriesByKey[k]);
+  Object.keys(paramFilters).forEach(k => { if (!active.has(k)) delete paramFilters[k]; });
+  const sig = keys.join(',');
+  if (sig === lastFilterKeySig) { recomputeFilterMask(); requestDraw(); return; }
+  lastFilterKeySig = sig;
+  if (!paramFiltersList) return;
+  if (!keys.length) {
+    paramFiltersList.innerHTML = '';
+    if (paramFiltersEmpty) paramFiltersEmpty.style.display = '';
+    recomputeFilterMask(); requestDraw(); return;
+  }
+  if (paramFiltersEmpty) paramFiltersEmpty.style.display = 'none';
+  paramFiltersList.innerHTML = keys.map(key => {
+    const s = seriesByKey[key], f = ensureFilterEntry(key);
+    return `<div class="pf-row" data-key="${key}">
+      <label class="pf-check" title="Включить фильтр">
+        <input type="checkbox" class="pf-enable"${f.enabled ? ' checked' : ''}>
+        <span class="pf-dot" style="background:${s.color}"></span>
+        <span class="pf-name">${s.name}</span>
+      </label>
+      <div class="pf-range">
+        <input type="number" class="pf-min" step="any" value="${f.min}">
+        <span class="pf-sep">–</span>
+        <input type="number" class="pf-max" step="any" value="${f.max}">
+      </div>
+    </div>`;
+  }).join('');
+  paramFiltersList.querySelectorAll('.pf-row').forEach(row => {
+    const key = row.getAttribute('data-key'), f = paramFilters[key];
+    row.querySelector('.pf-enable').addEventListener('change', (e) => { f.enabled = e.target.checked; recomputeFilterMask(); requestDraw(); });
+    row.querySelector('.pf-min').addEventListener('change', (e) => { const v = parseFloat(e.target.value); if (isFinite(v)) f.min = v; recomputeFilterMask(); requestDraw(); });
+    row.querySelector('.pf-max').addEventListener('change', (e) => { const v = parseFloat(e.target.value); if (isFinite(v)) f.max = v; recomputeFilterMask(); requestDraw(); });
+  });
+  recomputeFilterMask(); requestDraw();
+}
+
+function resizeCanvas(){
+  const rect = holder.getBoundingClientRect();
+  const dpr = window.devicePixelRatio || 1;
+  canvas.width = Math.max(1, Math.round(rect.width * dpr));
+  canvas.height = Math.max(1, Math.round(rect.height * dpr));
+  canvas.style.width = rect.width + 'px';
+  canvas.style.height = rect.height + 'px';
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  drawChart();
+}
+function xForIndex(i, w){
+  const usableW = w - PAD.left - PAD.right;
+  const norm = i / Math.max(1, N - 1);
+  return PAD.left + panOffset + norm * usableW * zoomFactor;
+}
+function indexForX(x, w){
+  const usableW = w - PAD.left - PAD.right;
+  const zoomedW = usableW * zoomFactor;
+  const t = zoomedW > 0 ? (x - PAD.left - panOffset) / zoomedW : 0;
+  return Math.round(Math.max(0, Math.min(1, t)) * Math.max(0, N - 1));
+}
+function floatIndexForX(x, w){
+  const usableW = w - PAD.left - PAD.right;
+  const zoomedW = usableW * zoomFactor;
+  const t = zoomedW > 0 ? (x - PAD.left - panOffset) / zoomedW : 0;
+  return Math.max(0, Math.min(1, t)) * Math.max(0, N - 1);
+}
+function clampPan(w){
+  const usableW = w - PAD.left - PAD.right;
+  const zoomedW = usableW * zoomFactor;
+  panOffset = Math.max(-(zoomedW - usableW), Math.min(0, panOffset));
+  if (!isFinite(panOffset)) panOffset = 0;
+}
+function yForVal(v, s, h){
+  const usableH = h - PAD.top - PAD.bottom;
+  return PAD.top + usableH * (1 - (v - s.min) / (s.max - s.min));
+}
+function updateZoomDisplay(){
+  const el = document.getElementById('zoomIndicator');
+  if (el) el.textContent = zoomFactor.toFixed(1) + '×';
+}
+let _drawScheduled = false;
+function requestDraw(){
+  if (_drawScheduled) return;
+  _drawScheduled = true;
+  requestAnimationFrame(() => { _drawScheduled = false; drawChart(); });
+}
+function drawChart(){
+  const rect = holder.getBoundingClientRect();
+  const w = rect.width, h = rect.height;
+  const dpr = window.devicePixelRatio || 1;
+  ctx.clearRect(0, 0, canvas.width / dpr, canvas.height / dpr);
+  clampPan(w);
+  const keys = [...active];
+  if (N === 0) {
+    emptyState.style.display = 'flex';
+    document.getElementById('emptyStateContent').style.display = 'block';
+    document.getElementById('noChannelsMsg').style.display = 'none';
+  } else if (keys.length === 0) {
+    emptyState.style.display = 'flex';
+    document.getElementById('emptyStateContent').style.display = 'none';
+    document.getElementById('noChannelsMsg').style.display = 'block';
+  } else emptyState.style.display = 'none';
+  zoomHint.classList.toggle('show', zoomFactor > 1);
+
+  ctx.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue('--grid').trim();
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  for (let r = 0; r <= 5; r++) {
+    const y = PAD.top + (h - PAD.top - PAD.bottom) * (r / 5) + 0.5;
+    ctx.moveTo(PAD.left, y); ctx.lineTo(w - PAD.right, y);
+  }
+  ctx.stroke();
+
+  let vLines = 6;
+  if (zoomFactor > 2) vLines = 12;
+  if (zoomFactor > 5) vLines = 20;
+  if (zoomFactor > 10) vLines = 40;
+  ctx.fillStyle = '#454e5c';
+  ctx.font = '9.5px ' + getComputedStyle(document.body).fontFamily;
+  ctx.textAlign = 'center';
+  ctx.beginPath();
+  const usableW = w - PAD.left - PAD.right;
+  for (let c = 0; c <= vLines; c++) {
+    const frac = c / vLines;
+    const x = PAD.left + panOffset + frac * usableW * zoomFactor + 0.5;
+    if (x < PAD.left || x > w - PAD.right) continue;
+    ctx.moveTo(x, PAD.top); ctx.lineTo(x, h - PAD.bottom);
+    const idx = Math.round(frac * Math.max(0, N - 1));
+    if (DATA.time[idx] !== undefined) ctx.fillText(DATA.time[idx].toFixed(1) + 's', x, h - 7);
+  }
+  ctx.stroke();
+
+  const usableWpx = (w - PAD.left - PAD.right) * zoomFactor;
+  const step = (N / Math.max(1, usableWpx)) > 2 ? Math.max(1, Math.floor((N / Math.max(1, usableWpx)) / 2)) : 1;
+  keys.forEach(key => {
+    const s = seriesByKey[key]; if (!s) return;
+    ctx.beginPath(); ctx.strokeStyle = s.color; ctx.lineWidth = 1.4;
+    let started = false;
+    for (let i = 0; i < N; i += step) {
+      const v = s.values[i];
+      if (v === null) { started = false; continue; }
+      const x = xForIndex(i, w), y = yForVal(v, s, h);
+      if (!started) { ctx.moveTo(x, y); started = true; } else ctx.lineTo(x, y);
+    }
+    if (step > 1 && N > 0) {
+      const last = N - 1, v = s.values[last];
+      if (v !== null) { const x = xForIndex(last, w), y = yForVal(v, s, h); if (started) ctx.lineTo(x, y); }
+    }
+    ctx.stroke();
+  });
+
+  if (filterAnyActive && filterMask && N > 0) {
+    ctx.fillStyle = 'rgba(4,5,7,0.68)';
+    const left = Math.max(PAD.left, 0), right = Math.min(w - PAD.right, w);
+    const top = PAD.top, bottom = h - PAD.bottom;
+    let runStart = null;
+    for (let x = Math.floor(left); x <= Math.ceil(right); x++) {
+      const idx = indexForX(x, w);
+      const dim = idx >= 0 && idx < N ? filterMask[idx] === 0 : false;
+      if (dim) { if (runStart === null) runStart = x; }
+      else if (runStart !== null) { ctx.fillRect(runStart, top, x - runStart, bottom - top); runStart = null; }
+    }
+    if (runStart !== null) ctx.fillRect(runStart, top, right - runStart, bottom - top);
+  }
+
+  if (currentFloatIndex >= 0 && currentFloatIndex <= N - 1 && N > 0) {
+    const px = xForIndex(currentFloatIndex, w);
+    ctx.strokeStyle = 'rgba(255,176,32,0.65)';
+    ctx.lineWidth = 1.2; ctx.setLineDash([3,3]);
+    ctx.beginPath(); ctx.moveTo(px, PAD.top); ctx.lineTo(px, h - PAD.bottom); ctx.stroke();
+    ctx.setLineDash([]);
+    keys.forEach(key => {
+      const s = seriesByKey[key]; if (!s) return;
+      const v = getInterpolatedValue(s, currentFloatIndex);
+      if (v === null || !isFinite(v)) return;
+      const y = yForVal(v, s, h); if (!isFinite(y)) return;
+      ctx.beginPath();
+      ctx.fillStyle = s.color;
+      ctx.shadowColor = s.color; ctx.shadowBlur = 8;
+      ctx.arc(px, y, 3.5, 0, Math.PI * 2); ctx.fill();
+      ctx.shadowBlur = 0;
+    });
+  }
+
+  if (hoverIndex !== null && Math.abs(hoverIndex - currentFloatIndex) > 0.5) {
+    const hx = xForIndex(hoverIndex, w);
+    ctx.strokeStyle = 'rgba(232,236,241,0.18)';
+    ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(hx, PAD.top); ctx.lineTo(hx, h - PAD.bottom); ctx.stroke();
+  }
+}
+
+let dragging = false, panDragging = false, dragStartX = 0, dragStartPan = 0;
+function handleHover(clientX, clientY){
+  const rect = holder.getBoundingClientRect();
+  const x = clientX - rect.left, y = clientY - rect.top;
+  if (N === 0) return;
+  const fIdx = floatIndexForX(x, rect.width);
+  hoverIndex = fIdx;
+  const keys = [...active];
+  if (keys.length === 0) { tooltip.classList.remove('show'); requestDraw(); return; }
+  let html = `<div class="t-time">t = ${interpolateTimeAt(fIdx).toFixed(3)}s</div>`;
+  keys.forEach(key => {
+    const s = seriesByKey[key]; if (!s) return;
+    const v = getInterpolatedValue(s, fIdx);
+    html += `<div class="t-row"><span class="t-dot" style="background:${s.color}"></span><span class="t-name">${s.name}</span><span class="t-val">${fmtVal(v, decideDigits(s))}${s.unit ? ' '+s.unit : ''}</span></div>`;
+  });
+  tooltip.innerHTML = html;
+  const tw = tooltip.offsetWidth || 160;
+  let left = x + 16;
+  if (left + tw > rect.width - 8) left = x - tw - 16;
+  let top = y - 10;
+  if (top < 4) top = 4;
+  tooltip.style.left = left + 'px'; tooltip.style.top = top + 'px';
+  tooltip.classList.add('show');
+  requestDraw();
+  if (dragging) setFloatIndex(fIdx);
+}
+holder.addEventListener('mousemove', (e) => {
+  if (panDragging) { panOffset = dragStartPan + (e.clientX - dragStartX); requestDraw(); }
+  else handleHover(e.clientX, e.clientY);
+});
+holder.addEventListener('mouseleave', () => { hoverIndex = null; tooltip.classList.remove('show'); requestDraw(); });
+holder.addEventListener('mousedown', (e) => {
+  if (e.button === 1 || (e.button === 0 && e.shiftKey)) {
+    if (zoomFactor > 1) { panDragging = true; dragStartX = e.clientX; dragStartPan = panOffset; e.preventDefault(); }
+  } else { dragging = true; stopPlaying(); handleHover(e.clientX, e.clientY); }
+});
+window.addEventListener('mouseup', () => { dragging = false; panDragging = false; });
+holder.addEventListener('wheel', (e) => {
+  if (e.deltaY === 0) return;
+  e.preventDefault();
+  if (N === 0) return;
+  const rect = holder.getBoundingClientRect();
+  const usableW = rect.width - PAD.left - PAD.right;
+  const oldZoomedW = usableW * zoomFactor;
+  const mouseX = e.clientX - rect.left;
+  const mouseNorm = oldZoomedW > 0 ? Math.max(0, Math.min(1, (mouseX - PAD.left - panOffset) / oldZoomedW)) : 0;
+  zoomFactor = Math.max(1, Math.min(30, zoomFactor * (e.deltaY > 0 ? 0.85 : 1.15)));
+  if (zoomFactor > 1 && N > 1) panOffset = mouseX - PAD.left - mouseNorm * usableW * zoomFactor;
+  else panOffset = 0;
+  clampPan(rect.width);
+  updateZoomDisplay(); drawChart();
+}, { passive: false });
+holder.addEventListener('dblclick', () => { zoomFactor = 1; panOffset = 0; updateZoomDisplay(); drawChart(); });
+function applyZoom(delta){
+  if (N === 0) return;
+  const rect = holder.getBoundingClientRect();
+  const oldZoom = zoomFactor;
+  zoomFactor = Math.max(1, Math.min(30, zoomFactor * delta));
+  if (zoomFactor > 1 && N > 1) {
+    const usableW = rect.width - PAD.left - PAD.right;
+    const centerX = usableW * 0.5;
+    const curZoomedW = usableW * oldZoom;
+    const curNorm = curZoomedW > 0 ? Math.max(0, Math.min(1, (centerX - PAD.left - panOffset) / curZoomedW)) : 0.5;
+    panOffset = centerX - PAD.left - curNorm * usableW * zoomFactor;
+  } else panOffset = 0;
+  clampPan(rect.width);
+  updateZoomDisplay(); drawChart();
+}
+document.getElementById('zoomInBtn').addEventListener('click', () => applyZoom(1.4));
+document.getElementById('zoomOutBtn').addEventListener('click', () => applyZoom(1/1.4));
+document.getElementById('zoomResetBtn').addEventListener('click', () => { zoomFactor = 1; panOffset = 0; updateZoomDisplay(); drawChart(); });
+holder.addEventListener('touchstart', (e) => {
+  if (N === 0) return;
+  stopPlaying();
+  const t = e.touches[0]; handleHover(t.clientX, t.clientY);
+}, { passive: true });
+holder.addEventListener('touchmove', (e) => {
+  if (N === 0) return;
+  const t = e.touches[0]; handleHover(t.clientX, t.clientY);
+}, { passive: true });
+
+/* ===== ЗАГРУЗКА ===== */
+function parseMLG(buffer){
+  const dv = new DataView(buffer), u8 = new Uint8Array(buffer);
+  const readStr = (off, len) => {
+    let s = '';
+    for (let i = 0; i < len; i++) { const c = u8[off + i]; if (c === 0) break; s += String.fromCharCode(c); }
+    return s.trim();
+  };
+  if (readStr(0, 6).indexOf('MLVLG') !== 0) throw new Error('Не MLVLG-файл');
+  const version = dv.getUint16(6);
+  let p, dataBegin, numFields;
+  if (version === 1) { dataBegin = dv.getUint32(14); numFields = dv.getUint16(20); p = 22; }
+  else { dataBegin = dv.getUint32(16); numFields = dv.getUint16(22); p = 24; }
+  const FIELD_LEN = version === 1 ? 55 : 89;
+  const NAME_LEN = 34, UNITS_LEN = 10;
+  const SIZE = {0:1,1:1,2:2,3:2,4:4,5:4,6:8,7:4,10:1,11:2,12:4};
+  const fields = []; let payloadSize = 0;
+  for (let i = 0; i < numFields; i++) {
+    const base = p + i * FIELD_LEN;
+    const type = u8[base];
+    const name = readStr(base + 1, NAME_LEN);
+    const units = readStr(base + 1 + NAME_LEN, UNITS_LEN);
+    let scale = 1, transform = 0;
+    if (type < 10) { const q = base + 1 + NAME_LEN + UNITS_LEN + 1; scale = dv.getFloat32(q); transform = dv.getFloat32(q + 4); }
+    const size = SIZE[type] != null ? SIZE[type] : 1;
+    fields.push({ type, name, units, scale, transform, size });
+    payloadSize += size;
+  }
+  const readVal = (o, type) => {
+    switch (type) {
+      case 0: case 10: return dv.getUint8(o);
+      case 1: return dv.getInt8(o);
+      case 2: case 11: return dv.getUint16(o);
+      case 3: return dv.getInt16(o);
+      case 4: case 12: return dv.getUint32(o);
+      case 5: return dv.getInt32(o);
+      case 6: return Number(dv.getBigInt64(o));
+      case 7: return dv.getFloat32(o);
+      default: return 0;
+    }
+  };
+  const cols = fields.map(() => []);
+  const dataStride = 4 + payloadSize + 1, markerStride = 4 + 50;
+  let o = dataBegin;
+  while (o + 1 <= buffer.byteLength) {
+    const bt = u8[o];
+    if (bt === 0) {
+      if (o + dataStride > buffer.byteLength) break;
+      let fo = o + 4;
+      for (let i = 0; i < numFields; i++) { const f = fields[i]; cols[i].push(readVal(fo, f.type) * f.scale + f.transform); fo += f.size; }
+      o += dataStride;
+    } else if (bt === 1) { if (o + markerStride > buffer.byteLength) break; o += markerStride; } else break;
+  }
+  const timeIdx = fields.findIndex(f => f.name.toLowerCase() === 'time');
+  const time = timeIdx >= 0 ? cols[timeIdx] : cols[0].map((_, i) => i);
+  if (!time.length) throw new Error('Нет данных');
+  const series = [];
+  fields.forEach((f, i) => { if (i === timeIdx) return; series.push({ key: 'p' + i, name: f.name, unit: f.units, category: 'MLG', values: cols[i] }); });
+  return { time, series };
+}
+
+const dropOverlay = document.createElement('div');
+dropOverlay.textContent = 'ПЕРЕТАЩИТЕ .MLG / .CSV / .JSON';
+Object.assign(dropOverlay.style, {
+  position: 'fixed', inset: '0', display: 'none', zIndex: '9999',
+  alignItems: 'center', justifyContent: 'center', textAlign: 'center',
+  background: 'rgba(10,12,16,0.86)', color: '#ffb020',
+  font: '600 15px ui-monospace, monospace', letterSpacing: '0.16em',
+  border: '2px dashed #7a5a1e', pointerEvents: 'none', textTransform: 'uppercase'
+});
+document.body.appendChild(dropOverlay);
+let dragDepth = 0;
+window.addEventListener('dragenter', (e) => { e.preventDefault(); dragDepth++; dropOverlay.style.display = 'flex'; });
+window.addEventListener('dragover', (e) => e.preventDefault());
+window.addEventListener('dragleave', (e) => { e.preventDefault(); if (--dragDepth <= 0) { dragDepth = 0; dropOverlay.style.display = 'none'; } });
+window.addEventListener('drop', (e) => {
+  e.preventDefault(); dragDepth = 0; dropOverlay.style.display = 'none';
+  const files = e.dataTransfer && e.dataTransfer.files;
+  if (files && files.length > 0) handleFileLoad(files[0]);
+});
+
+function parseCSV(text){
+  if (text.charCodeAt(0) === 0xFEFF) text = text.slice(1);
+  const clean = s => s == null ? '' : String(s).trim().replace(/^"|"$/g, '');
+  const rawLines = text.split(/\r?\n/);
+  let headerLineIdx = -1;
+  for (let i = 0; i < rawLines.length; i++) {
+    const l = rawLines[i].trim();
+    if (!l) continue;
+    if (l.startsWith('"') && !l.includes('\t') && l.split(',').length < 3) continue;
+    headerLineIdx = i; break;
+  }
+  if (headerLineIdx === -1) throw new Error('Нет заголовка');
+  const headerLine = rawLines[headerLineIdx];
+  let delim = ',';
+  if (headerLine.includes('\t')) delim = '\t';
+  else if (headerLine.includes(';') && !headerLine.includes(',')) delim = ';';
+  const header = headerLine.split(delim).map(clean);
+  if (header.length < 2) throw new Error('Мало колонок');
+  let timeIdx = header.findIndex(h => /^time$/i.test(h));
+  if (timeIdx === -1) timeIdx = header.findIndex(h => /time/i.test(h));
+  if (timeIdx === -1) throw new Error('Нет колонки Time');
+  let unitsRow = null, dataStartIdx = headerLineIdx + 1;
+  for (let i = headerLineIdx + 1; i < rawLines.length; i++) {
+    const l = rawLines[i];
+    if (!l.trim()) { dataStartIdx = i + 1; continue; }
+    const fc = l.split(delim)[timeIdx];
+    if (fc !== undefined && !isFinite(parseFloat(clean(fc)))) { unitsRow = l.split(delim).map(clean); dataStartIdx = i + 1; }
+    break;
+  }
+  const data = { time: [], series: [] };
+  const seriesMeta = header.map((h, idx) => {
+    if (idx === timeIdx) return null;
+    let name = h, unit = '';
+    const m = h.match(/^(.+?)\s*\(([^)]*)\)\s*$/);
+    if (m) { name = m[1].trim(); unit = m[2].trim(); }
+    if (unitsRow && unitsRow[idx]) unit = unitsRow[idx];
+    return { idx, name, unit };
+  }).filter(Boolean);
+  const estRows = rawLines.length - dataStartIdx;
+  seriesMeta.forEach((meta, i) => { data.series[i] = { key: 'p' + i, name: meta.name, unit: meta.unit, category: 'Imported', values: new Array(estRows) }; });
+  const timeArr = new Array(estRows);
+  let row = 0;
+  for (let r = dataStartIdx; r < rawLines.length; r++) {
+    const line = rawLines[r]; if (!line) continue;
+    const cells = line.split(delim);
+    if (cells.length < header.length) continue;
+    const t = parseFloat(clean(cells[timeIdx]));
+    if (!isFinite(t)) continue;
+    timeArr[row] = t;
+    for (let i = 0; i < seriesMeta.length; i++) {
+      const v = parseFloat(clean(cells[seriesMeta[i].idx]));
+      data.series[i].values[row] = isFinite(v) ? v : null;
+    }
+    row++;
+  }
+  timeArr.length = row;
+  seriesMeta.forEach((_, i) => { data.series[i].values.length = row; });
+  data.time = timeArr;
+  return data;
+}
+function parseJSON(text){
+  const obj = JSON.parse(text);
+  if (!obj.time || !obj.series) throw new Error('JSON без time/series');
+  return obj;
+}
+function addCalculatedSeries(){
+  const ve1 = DATA.series.find(s => /^ve_?1$/i.test(s.name));
+  const ve2 = DATA.series.find(s => /^ve_?2$/i.test(s.name));
+  if (!ve1 || !ve2) return;
+  const vals = [];
+  for (let i = 0; i < ve1.values.length; i++) {
+    const v1 = ve1.values[i], v2 = ve2.values[i];
+    vals.push(v1 === null || v2 === null ? null : (v1 * v2) / 100);
+  }
+  const s = { key: 've_total', name: 've_total', unit: '%', category: 'Calculated', values: vals };
+  let mn = Infinity, mx = -Infinity;
+  for (const v of vals) { if (v === null) continue; if (v < mn) mn = v; if (v > mx) mx = v; }
+  if (!isFinite(mn)) { mn = 0; mx = 1; }
+  if (mn === mx) { mn -= 1; mx += 1; }
+  s.min = mn; s.max = mx;
+  const hue = (DATA.series.length * 137.508) % 360;
+  s.color = `hsl(${hue.toFixed(0)}, 78%, 62%)`;
+  DATA.series.push(s); seriesByKey[s.key] = s;
+}
+async function handleFileLoad(file){
+  try {
+    const ext = file.name.split('.').pop().toLowerCase();
+    let data;
+    if (ext === 'csv') data = parseCSV(await file.text());
+    else if (ext === 'json') data = parseJSON(await file.text());
+    else if (ext === 'mlg') data = parseMLG(await file.arrayBuffer());
+    else throw new Error('Неподдерживаемый тип: .' + ext);
+
+    Object.assign(DATA, data);
+    N = DATA.time.length;
+    currentIndex = 0; currentFloatIndex = 0;
+    zoomFactor = 1; panOffset = 0;
+    active.clear(); paramFilters = {};
+    filterMask = null; filterAnyActive = false; lastFilterKeySig = '\0';
+    tableXMin = tableXMax = null; tableYMin = tableYMax = null; tableAgg = null;
+
+    DATA.series.forEach((s, i) => {
+      const hue = (i * 137.508) % 360;
+      s.color = `hsl(${hue.toFixed(0)}, 78%, 62%)`;
+      let mn = Infinity, mx = -Infinity;
+      for (const v of s.values) { if (v === null) continue; if (v < mn) mn = v; if (v > mx) mx = v; }
+      if (!isFinite(mn)) { mn = 0; mx = 1; }
+      if (mn === mx) { mn -= 1; mx += 1; }
+      s.min = mn; s.max = mx;
+    });
+
+    seriesByKey = {};
+    DATA.series.forEach(s => seriesByKey[s.key] = s);
+    addCalculatedSeries();
+    rebuildCategories();
+
+    ['RPM', 'MAP', 'TPS', 'AFR', 've_total'].forEach(name => {
+      const s = DATA.series.find(s => s.name === name);
+      if (s) active.add(s.key);
+    });
+
+    const names = DATA.series.map(s => s.name);
+    if (!names.includes(tableXAxis) && names.includes('RPM')) tableXAxis = 'RPM';
+    if (!names.includes(tableYAxis) && names.includes('MAP')) tableYAxis = 'MAP';
+    if (!names.includes(tableCellChannelName)) tableCellChannelName = names.includes('AFR') ? 'AFR' : (names[0] || '');
+
+    scrubber.max = Math.max(0, N - 1);
+    scrubber.value = 0;
+    scrubber.style.setProperty('--scrub-pct', '0%');
+    totalTimeEl.textContent = (N > 0 ? DATA.time[N - 1].toFixed(4) : '0.0000') + 's';
+    document.getElementById('metaInfo').textContent = N > 0
+      ? `${N.toLocaleString('ru-RU')} сэмплов · ${DATA.time[N - 1].toFixed(1)}с`
+      : 'файл не загружен';
+
+    updateZoomDisplay();
+    renderParamsList('');
+    renderConfigPanel();
+    renderReadouts();
+    renderParamFilters();
+    renderTableConfig();
+    recomputeTableAgg();
+    setFloatIndex(0);
+    updateMaxDisplay();
+
+    // Обновить заголовок окна (в Electron)
+    if (file && file.name) document.title = `MLVLG // ${file.name}`;
+  } catch (e) {
+    console.error(e);
+    alert('Ошибка загрузки: ' + e.message);
+  }
+  fileInput.value = '';
+}
+fileInput.addEventListener('change', (e) => { if (e.target.files.length > 0) handleFileLoad(e.target.files[0]); });
+
+/* ===== ИНТЕГРАЦИЯ ELECTRON (заменяет прямые вызовы fileInput.click()) ===== */
+async function openLogDialog() {
+  if (window.electronAPI && window.electronAPI.isElectron) {
+    try {
+      const filePath = await window.electronAPI.pickFile();
+      if (!filePath) return;
+      const f = await window.electronAPI.readFile(filePath);
+      handleFileLoad(new File([f.buffer], f.name));
+    } catch (e) { console.error(e); alert('Ошибка: ' + e.message); }
+    return;
+  }
+  fileInput.click();
+}
+loadBtn.addEventListener('click', openLogDialog);
+document.getElementById('emptyLoadBtn').addEventListener('click', openLogDialog);
+
+if (window.electronAPI && window.electronAPI.isElectron) {
+  window.electronAPI.onOpenFile((payload) => {
+    try {
+      handleFileLoad(new File([payload.buffer], payload.name));
+    } catch (e) { console.error(e); alert('Ошибка: ' + e.message); }
+  });
+}
+
+/* ===== DRAWER КОНФИГУРАЦИИ ДВИГАТЕЛЯ ===== */
+const engineOverlay = document.getElementById('engineOverlay');
+const engineModal = document.getElementById('engineModal');
+const emBody = document.getElementById('emBody');
+const ECUS = ['', 'Stealth PCM', 'Speeduino', 'rusEFI', 'MegaSquirt MS2', 'MegaSquirt MS3', 'MS3Pro', 'MS3Pro EVO',
+  'Haltech Elite', 'Link G4X', 'Ecumaster EMU Black', 'MaxxECU', 'Syrus', 'Январь 7.2', 'Микас 11', 'KDFI', 'Другой'];
+const FUELS = [['92','АИ-92'], ['95','АИ-95'], ['98','АИ-98'], ['E85','E85'], ['methanol','Метанол'], ['race','Гоночное']];
+const CAM_MFRS = ['', 'Stock', 'Cat Cams', 'Schrick', 'Kent Cams', 'Piper', 'DBilas', 'Newman', 'Tomei', 'HKS', 'Другой'];
+const PISTON_MFRS = ['', 'Stock', 'Mahle', 'JE', 'Wiseco', 'CP', 'Ross', 'Arias', 'Другой'];
+const ROD_MFRS = ['', 'Stock', 'Carrillo', 'Manley', 'Eagle', 'CP', 'K1', 'Scat', 'Другой'];
+const PLUG_MFRS = ['', 'NGK', 'Denso', 'Bosch', 'Champion', 'Autolite', 'Другой'];
+
+function renderEngineForm(){
+  const c = ENGINE_CONFIG;
+  const presetKeys = Object.keys(ENGINE_PRESETS);
+  emBody.innerHTML = `
+    <div class="em-section">
+      <div class="em-section-title">Модель двигателя</div>
+      <div class="em-grid">
+        <label class="em-full">Предустановка
+          <select id="cfgPreset">${presetKeys.map(k => `<option value="${k}"${k === c.modelKey ? ' selected' : ''}>${ENGINE_PRESETS[k].label}</option>`).join('')}</select>
+        </label>
+        <label class="em-full" style="font-size:9px;color:var(--text-dimmer);text-transform:none;">При выборе предустановки все поля ниже заполняются автоматически. Их можно менять вручную.</label>
+      </div>
+    </div>
+    <div class="em-section">
+      <div class="em-section-title">Двигатель</div>
+      <div class="em-grid">
+        <label>Объём, л <div class="em-row"><input type="number" id="cfgDisplacement" min="0.5" max="10" step="0.1" value="${c.displacement}"><span class="unit">л</span></div></label>
+        <label>Цилиндров <div class="em-row"><input type="number" id="cfgCylinders" min="1" max="16" step="1" value="${c.cylinders}"><span class="unit">шт</span></div></label>
+        <label>Тип
+          <select id="cfgAspiration">
+            <option value="na"${c.aspiration === 'na' ? ' selected' : ''}>Атмосферный</option>
+            <option value="turbo"${c.aspiration === 'turbo' ? ' selected' : ''}>Турбонаддув</option>
+            <option value="supercharger"${c.aspiration === 'supercharger' ? ' selected' : ''}>Компрессор</option>
+          </select>
+        </label>
+      </div>
+    </div>
+    <div class="em-section">
+      <div class="em-section-title">Впуск</div>
+      <div class="em-grid">
+        <label>Дроссель, мм <div class="em-row"><input type="number" id="cfgThrottleSize" min="30" max="120" step="1" value="${c.throttleSize}"><span class="unit">мм</span></div></label>
+        <label>Тип
+          <select id="cfgThrottleType">
+            <option value="electronic"${c.throttleType === 'electronic' ? ' selected' : ''}>Электронный</option>
+            <option value="mechanical"${c.throttleType === 'mechanical' ? ' selected' : ''}>Механический</option>
+            <option value="itb"${c.throttleType === 'itb' ? ' selected' : ''}>ITB</option>
+          </select>
+        </label>
+      </div>
+    </div>
+    <div class="em-section">
+      <div class="em-section-title">Распредвалы</div>
+      <div class="em-grid">
+        <label class="em-full">Производитель <select id="cfgCamManufacturer">${buildOptions(CAM_MFRS, c.camManufacturer)}</select></label>
+        <label>Впуск: подъём <div class="em-row"><input type="number" id="cfgCamIntakeLift" min="0" max="20" step="0.1" value="${c.camIntakeLift}"><span class="unit">мм</span></div></label>
+        <label>Впуск: продолж. <div class="em-row"><input type="number" id="cfgCamIntakeDuration" min="150" max="360" step="1" value="${c.camIntakeDuration}"><span class="unit">°</span></div></label>
+        <label>Выпуск: подъём <div class="em-row"><input type="number" id="cfgCamExhaustLift" min="0" max="20" step="0.1" value="${c.camExhaustLift}"><span class="unit">мм</span></div></label>
+        <label>Выпуск: продолж. <div class="em-row"><input type="number" id="cfgCamExhaustDuration" min="150" max="360" step="1" value="${c.camExhaustDuration}"><span class="unit">°</span></div></label>
+        <label>Перекрытие <div class="em-row"><input type="number" id="cfgCamPhase" min="-30" max="30" step="1" value="${c.camPhase}"><span class="unit">°</span></div></label>
+      </div>
+    </div>
+    <div class="em-section">
+      <div class="em-section-title">Топливо и ЭБУ</div>
+      <div class="em-grid">
+        <label>Форсунки <div class="em-row"><input type="number" id="cfgInjectorSize" min="100" max="2000" step="10" value="${c.injectorSize}"><span class="unit">cc/мин</span></div></label>
+        <label>Давление топлива <div class="em-row"><input type="number" id="cfgFuelPressure" min="1.5" max="8" step="0.1" value="${c.fuelPressure}"><span class="unit">бар</span></div></label>
+        <label>Топливо <select id="cfgFuelType">${buildOptions(FUELS, c.fuelType)}</select></label>
+        <label>Референс по наддуву
+          <select id="cfgBoostRef">
+            <option value="true"${c.boostReferenced ? ' selected' : ''}>Да (boost-referenced)</option>
+            <option value="false"${!c.boostReferenced ? ' selected' : ''}>Нет</option>
+          </select>
+        </label>
+        <label class="em-full">ЭБУ <select id="cfgEcuModel">${buildOptions(ECUS, c.ecuModel)}</select></label>
+        <label class="em-full">Прошивка / версия <input type="text" id="cfgEcuFirmware" value="${(c.ecuFirmware || '').replace(/"/g, '&quot;')}"></label>
+      </div>
+    </div>
+    <div class="em-section">
+      <div class="em-section-title">Поршни</div>
+      <div class="em-grid">
+        <label class="em-full">Производитель <select id="cfgPistonManufacturer">${buildOptions(PISTON_MFRS, c.pistonManufacturer)}</select></label>
+        <label>Диаметр <div class="em-row"><input type="number" id="cfgPistonBore" min="50" max="120" step="0.01" value="${c.pistonBore}"><span class="unit">мм</span></div></label>
+        <label>СЖ <div class="em-row"><input type="number" id="cfgCompressionRatio" min="5" max="20" step="0.1" value="${c.compressionRatio}"><span class="unit">:1</span></div></label>
+        <label>Материал
+          <select id="cfgPistonMaterial">
+            <option value="cast"${c.pistonMaterial === 'cast' ? ' selected' : ''}>Литой</option>
+            <option value="forged"${c.pistonMaterial === 'forged' ? ' selected' : ''}>Кованый</option>
+            <option value="hypereutectic"${c.pistonMaterial === 'hypereutectic' ? ' selected' : ''}>Эвтектический</option>
+          </select>
+        </label>
+      </div>
+    </div>
+    <div class="em-section">
+      <div class="em-section-title">Шатуны</div>
+      <div class="em-grid">
+        <label class="em-full">Производитель <select id="cfgRodManufacturer">${buildOptions(ROD_MFRS, c.rodManufacturer)}</select></label>
+        <label>Длина <div class="em-row"><input type="number" id="cfgRodLength" min="80" max="200" step="0.5" value="${c.rodLength}"><span class="unit">мм</span></div></label>
+        <label>Материал
+          <select id="cfgRodMaterial">
+            <option value="stock"${c.rodMaterial === 'stock' ? ' selected' : ''}>Сток</option>
+            <option value="forged"${c.rodMaterial === 'forged' ? ' selected' : ''}>Кованый</option>
+            <option value="billet"${c.rodMaterial === 'billet' ? ' selected' : ''}>Биллет</option>
+          </select>
+        </label>
+      </div>
+    </div>
+    <div class="em-section">
+      <div class="em-section-title">Свечи зажигания</div>
+      <div class="em-grid">
+        <label>Производитель <select id="cfgPlugManufacturer">${buildOptions(PLUG_MFRS, c.plugManufacturer)}</select></label>
+        <label>Модель <input type="text" id="cfgPlugModel" value="${(c.plugModel || '').replace(/"/g, '&quot;')}"></label>
+        <label>Зазор <div class="em-row"><input type="number" id="cfgPlugGap" min="0.2" max="2" step="0.05" value="${c.plugGap}"><span class="unit">мм</span></div></label>
+        <label>Калильное число
+          <select id="cfgPlugHeatRange">
+            <option value="cold"${c.plugHeatRange === 'cold' ? ' selected' : ''}>Холодные</option>
+            <option value="medium"${c.plugHeatRange === 'medium' ? ' selected' : ''}>Средние</option>
+            <option value="hot"${c.plugHeatRange === 'hot' ? ' selected' : ''}>Горячие</option>
+          </select>
+        </label>
+      </div>
+    </div>
+    <div class="em-section">
+      <div class="em-section-title">Катушки зажигания</div>
+      <div class="em-grid">
+        <label>Тип
+          <select id="cfgCoilType">
+            <option value="cop"${c.coilType === 'cop' ? ' selected' : ''}>COP (на свече)</option>
+            <option value="wasted"${c.coilType === 'wasted' ? ' selected' : ''}>Wasted spark</option>
+            <option value="distributor"${c.coilType === 'distributor' ? ' selected' : ''}>Трамблёр</option>
+          </select>
+        </label>
+        <label>Производитель <input type="text" id="cfgCoilManufacturer" value="${(c.coilManufacturer || '').replace(/"/g, '&quot;')}"></label>
+        <label class="em-full">Модель <input type="text" id="cfgCoilModel" value="${(c.coilModel || '').replace(/"/g, '&quot;')}"></label>
+      </div>
+    </div>
+    <div class="em-section">
+      <div class="em-section-title">Заметки</div>
+      <div class="em-grid">
+        <label class="em-full">Комментарий <textarea id="cfgNotes" rows="3">${(c.notes || '').replace(/</g, '&lt;')}</textarea></label>
+      </div>
+    </div>`;
+  const presetSel = document.getElementById('cfgPreset');
+  if (presetSel) presetSel.addEventListener('change', (e) => applyPreset(e.target.value));
+}
+
+function applyPreset(key){
+  const preset = ENGINE_PRESETS[key]; if (!preset) return;
+  if (key === 'custom') { ENGINE_CONFIG.modelKey = 'custom'; persistConfig(); updateConfigIndicator(); return; }
+  Object.assign(ENGINE_CONFIG, DEFAULT_CONFIG, preset.data, { modelKey: key });
+  injectorSize = ENGINE_CONFIG.injectorSize;
+  cylinderCount = ENGINE_CONFIG.cylinders;
+  fuelPressure = ENGINE_CONFIG.fuelPressure;
+  persistConfig(); updateConfigIndicator(); renderEngineForm();
+  renderConfigPanel(); updateComputedReadouts(); updateMaxDisplay();
+}
+
+function openEngineDrawer(){ renderEngineForm(); engineOverlay.classList.add('open'); engineModal.classList.add('open'); }
+function closeEngineDrawer(){ engineModal.classList.remove('open'); engineOverlay.classList.remove('open'); }
+
+document.getElementById('configIndicator').addEventListener('click', openEngineDrawer);
+document.getElementById('emCloseBtn').addEventListener('click', closeEngineDrawer);
+engineOverlay.addEventListener('click', closeEngineDrawer);
+
+document.getElementById('emResetBtn').addEventListener('click', () => {
+  if (!confirm('Сбросить конфигурацию к значениям по умолчанию?')) return;
+  ENGINE_CONFIG = Object.assign({}, DEFAULT_CONFIG);
+  injectorSize = ENGINE_CONFIG.injectorSize;
+  cylinderCount = ENGINE_CONFIG.cylinders;
+  fuelPressure = ENGINE_CONFIG.fuelPressure;
+  persistConfig(); updateConfigIndicator(); renderEngineForm();
+  renderConfigPanel(); updateComputedReadouts(); updateMaxDisplay();
+  showToast('Конфигурация сброшена');
+});
+
+document.getElementById('emSaveBtn').addEventListener('click', () => {
+  const g = (id) => document.getElementById(id);
+  ENGINE_CONFIG.displacement = parseFloat(g('cfgDisplacement').value) || 2.0;
+  ENGINE_CONFIG.cylinders = parseInt(g('cfgCylinders').value) || 4;
+  ENGINE_CONFIG.aspiration = g('cfgAspiration').value;
+  ENGINE_CONFIG.throttleSize = parseFloat(g('cfgThrottleSize').value) || 60;
+  ENGINE_CONFIG.throttleType = g('cfgThrottleType').value;
+  ENGINE_CONFIG.camManufacturer = g('cfgCamManufacturer').value;
+  ENGINE_CONFIG.camIntakeLift = parseFloat(g('cfgCamIntakeLift').value) || 0;
+  ENGINE_CONFIG.camIntakeDuration = parseFloat(g('cfgCamIntakeDuration').value) || 0;
+  ENGINE_CONFIG.camExhaustLift = parseFloat(g('cfgCamExhaustLift').value) || 0;
+  ENGINE_CONFIG.camExhaustDuration = parseFloat(g('cfgCamExhaustDuration').value) || 0;
+  ENGINE_CONFIG.camPhase = parseFloat(g('cfgCamPhase').value) || 0;
+  ENGINE_CONFIG.injectorSize = parseFloat(g('cfgInjectorSize').value) || 630;
+  ENGINE_CONFIG.fuelPressure = parseFloat(g('cfgFuelPressure').value) || 3.0;
+  ENGINE_CONFIG.fuelType = g('cfgFuelType').value;
+  ENGINE_CONFIG.boostReferenced = g('cfgBoostRef').value === 'true';
+  ENGINE_CONFIG.ecuModel = g('cfgEcuModel').value;
+  ENGINE_CONFIG.ecuFirmware = g('cfgEcuFirmware').value;
+  ENGINE_CONFIG.pistonManufacturer = g('cfgPistonManufacturer').value;
+  ENGINE_CONFIG.pistonBore = parseFloat(g('cfgPistonBore').value) || 82;
+  ENGINE_CONFIG.compressionRatio = parseFloat(g('cfgCompressionRatio').value) || 9.5;
+  ENGINE_CONFIG.pistonMaterial = g('cfgPistonMaterial').value;
+  ENGINE_CONFIG.rodManufacturer = g('cfgRodManufacturer').value;
+  ENGINE_CONFIG.rodLength = parseFloat(g('cfgRodLength').value) || 143;
+  ENGINE_CONFIG.rodMaterial = g('cfgRodMaterial').value;
+  ENGINE_CONFIG.plugManufacturer = g('cfgPlugManufacturer').value;
+  ENGINE_CONFIG.plugModel = g('cfgPlugModel').value;
+  ENGINE_CONFIG.plugGap = parseFloat(g('cfgPlugGap').value) || 0.8;
+  ENGINE_CONFIG.plugHeatRange = g('cfgPlugHeatRange').value;
+  ENGINE_CONFIG.coilType = g('cfgCoilType').value;
+  ENGINE_CONFIG.coilManufacturer = g('cfgCoilManufacturer').value;
+  ENGINE_CONFIG.coilModel = g('cfgCoilModel').value;
+  ENGINE_CONFIG.notes = g('cfgNotes').value;
+
+  injectorSize = ENGINE_CONFIG.injectorSize;
+  cylinderCount = ENGINE_CONFIG.cylinders;
+  fuelPressure = ENGINE_CONFIG.fuelPressure;
+
+  persistConfig(); updateConfigIndicator(); renderConfigPanel();
+  updateComputedReadouts(); updateMaxDisplay();
+  showToast('Конфигурация сохранена');
+  closeEngineDrawer();
+});
+
+document.getElementById('deepseekLinkBtn').addEventListener('click', () => {
+  const c = ENGINE_CONFIG;
+  const stats = computeMaxStats();
+  const summary =
+    `MLVLG — анализ лога\n` +
+    `Двигатель: ${c.displacement}L, ${c.cylinders} цил., ${c.aspiration}, СЖ ${c.compressionRatio}\n` +
+    `Форсунки: ${c.injectorSize}cc, топливо ${c.fuelType}, давление ${c.fuelPressure} бар\n` +
+    `Пик HP: ${stats.maxHP.toFixed(0)} @ ${stats.maxHPRPM.toFixed(0)} об/мин\n` +
+    `Пик воздуха: ${stats.maxAir.toFixed(0)} кг/ч @ ${stats.maxAirRPM.toFixed(0)} об/мин\n` +
+    `ЭБУ: ${c.ecuModel || '—'}\n` +
+    `Сэмплов: ${N}, длительность: ${N>0 ? DATA.time[N-1].toFixed(2) : 0}с\n`;
+  const open = () => {
+    if (window.electronAPI && window.electronAPI.isElectron) window.open('https://chat.deepseek.com', '_blank');
+    else window.open('https://chat.deepseek.com', '_blank');
+  };
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(summary).then(() => {
+      showToast('Сводка скопирована в буфер. Открываем DeepSeek…');
+      setTimeout(open, 400);
+    }).catch(open);
+  } else open();
+});
+
+/* ===== ИНИЦИАЛИЗАЦИЯ ===== */
+updateConfigIndicator();
+renderConfigPanel();
+updateZoomDisplay();
+resizeCanvas();
+window.addEventListener('resize', resizeCanvas);
+const ro = new ResizeObserver(() => resizeCanvas());
+ro.observe(holder);
+updateMaxDisplay();
+</script>
+</body>
+</html>
