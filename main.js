@@ -24,12 +24,33 @@ function createWindow() {
     }
   });
 
-  mainWindow.loadFile(path.join(__dirname, 'renderer', 'index.html'));
+  const indexPath = path.join(__dirname, 'renderer', 'index.html');
+  
+  // Выводим в консоль путь к файлу (для отладки)
+  console.log('====================================');
+  console.log('Ищем HTML по пути:', indexPath);
+  console.log('Файл существует?', fs.existsSync(indexPath));
+  console.log('====================================');
+
+  mainWindow.loadFile(indexPath);
+  
+  // Принудительно открываем консоль разработчика (справа), чтобы видеть ошибки
+  mainWindow.webContents.openDevTools({ mode: 'detach' });
+
   mainWindow.once('ready-to-show', () => mainWindow.show());
+
+  // Ловим ошибку, если файл не найден, и показываем окошко
+  mainWindow.webContents.on('did-fail-load', (event, errorCode, errorDescription, validatedURL) => {
+    dialog.showErrorBox(
+      'Ошибка загрузки интерфейса', 
+      `Не удалось загрузить файл!\n\nПуть: ${validatedURL}\nКод ошибки: ${errorCode}\nПричина: ${errorDescription}\n\nПроверьте, что папка renderer и файл index.html лежат в корне репозитория.`
+    );
+  });
 
   mainWindow.webContents.on('will-navigate', (e, url) => {
     if (!url.startsWith('file://')) { e.preventDefault(); shell.openExternal(url); }
   });
+  
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     shell.openExternal(url); return { action: 'deny' };
   });
@@ -81,7 +102,7 @@ function buildMenu() {
         click: () => dialog.showMessageBox(mainWindow, {
           type: 'info', title: 'MLVLG Viewer',
           message: `MLVLG Viewer v${app.getVersion()}`,
-          detail: `Electron ${process.versions.electron}\nChromium ${process.versions.chrome}\nNode ${process.versions.node}`,
+          detail: `Electron ${process.versions.electron}\nChromium ${process.versions.chrome}`,
           buttons: ['OK']
         })
       }]
