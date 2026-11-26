@@ -7,9 +7,7 @@
   "license": "MIT",
   "scripts": {
     "start": "electron .",
-    "build": "electron-builder --win portable nsis",
-    "build:portable": "electron-builder --win portable",
-    "build:installer": "electron-builder --win nsis"
+    "build": "electron-builder --win portable nsis"
   },
   "devDependencies": {
     "electron": "^28.3.0",
@@ -39,10 +37,7 @@
     },
     "nsis": {
       "oneClick": false,
-      "perMachine": false,
       "allowToChangeInstallationDirectory": true,
-      "createDesktopShortcut": true,
-      "createStartMenuShortcut": true,
       "artifactName": "MLVLG-Viewer-Setup-${version}.exe"
     }
   }
